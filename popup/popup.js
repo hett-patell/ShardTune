@@ -135,6 +135,17 @@ chrome.storage.local.get('display_name', r => {
   }
 });
 
+// Decide the initial screen from the stored session so the popup doesn't flash
+// "Connect Spotify" on a cold service worker. A stored token (or refresh token)
+// means we're logged in — show the player right away; if the token turns out to
+// be dead, the background's auth-required will bounce us back to the auth screen.
+chrome.storage.local.get(['access_token', 'refresh_token'], r => {
+  if ((r.access_token || r.refresh_token) && !authenticated) {
+    authenticated = true;
+    showPlayer();
+  }
+});
+
 // --- Setup ---
 
 const REDIRECT_URI = 'http://127.0.0.1:43827/spotify/callback';

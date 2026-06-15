@@ -103,7 +103,13 @@ async function doPoll() {
       return;
     }
 
+    // Announce auth on the false→true transition. A cold service worker spawns
+    // with isAuthenticated=false, so onConnect can't tell the popup it's logged
+    // in — without this, the first popup after a browser start stays stuck on
+    // "Connect Spotify" until the next open.
+    const wasAuthenticated = isAuthenticated;
     isAuthenticated = true;
+    if (!wasAuthenticated) broadcast({ type: 'auth-success' });
 
     const state = await spotify.getPlayerState();
     lastState = state;
