@@ -2,9 +2,9 @@
 
 # 🎧 ShardTune
 
-**A Spotify desk controller + listening-analytics extension that lives in your browser, not rent-free in your head.**
+**The Spotify controller + listening-analytics browser extension for Chrome & Brave that lives in your browser, not rent-free in your head.**
 
-Control playback, switch devices, peek your queue, and watch your listening habits get exposed in real time — all without leaving the tab you're doom-scrolling.
+Control Spotify playback, switch Spotify Connect devices, peek your queue, set a sleep timer, and watch your listening habits get exposed in real time — a full Spotify deck controller *and* a local music-stats dashboard, no leaving the tab you're doom-scrolling.
 
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-1db954?style=flat-square)
 ![Vanilla JS](https://img.shields.io/badge/Stack-Vanilla%20JS-f7df1e?style=flat-square)
@@ -18,7 +18,7 @@ Control playback, switch devices, peek your queue, and watch your listening habi
 
 ## The vibe
 
-Most "Spotify for your browser" things are either a glorified play/pause button or a 4MB React cathedral. ShardTune is neither. It's a tight little Chromium **MV3** extension — pure HTML/CSS/JS, zero frameworks, zero build step — that gives you a full deck controller in the popup and a genuinely nosy analytics dashboard in a tab.
+Most "Spotify for your browser" things are either a glorified play/pause button or a 4MB React cathedral. ShardTune is neither. It's a tight little Chromium **Manifest V3 (MV3)** extension built on the **Spotify Web API** — pure HTML/CSS/JS, zero frameworks, zero build step — that gives you a full playback controller in the popup and a genuinely nosy listening-stats dashboard in a tab. Runs on **Chrome, Brave, Edge**, and any Chromium browser.
 
 It's giving *"I have my life together"* energy. (You do not. The streak counter knows.)
 
