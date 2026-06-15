@@ -259,23 +259,11 @@ async function handlePortMessage(msg, port) {
 
         let energyCurve = [];
         if (recent?.items?.length) {
-          const trackIds = recent.items
-            .map(i => i.track?.id).filter(Boolean)
-            .filter((v, idx, arr) => arr.indexOf(v) === idx);
-          const features = await spotify.getAudioFeatures(trackIds).catch(() => null);
-          const featureMap = {};
-          if (features?.audio_features) {
-            for (const f of features.audio_features) {
-              if (f) featureMap[f.id] = f;
-            }
-          }
+          // Spotify deprecated /audio-features (403 for apps created after
+          // 2024-11-27), so energy is derived from a deterministic local proxy.
           energyCurve = recent.items.map(item => {
             const t = item.track;
-            const feat = featureMap[t.id];
-            const energy = feat
-              ? Math.round(feat.energy * 100)
-              : Math.round(analytics.energyProxy(t));
-            return { label: t.name || 'Unknown', value: energy, trackId: t.id };
+            return { label: t.name || 'Unknown', value: Math.round(analytics.energyProxy(t)), trackId: t.id };
           }).reverse();
         }
 

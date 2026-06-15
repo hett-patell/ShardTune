@@ -1,11 +1,12 @@
 import * as storage from './storage.js';
 
 const SCOPES = [
-  'user-read-playback-state',
-  'user-modify-playback-state',
-  'user-read-currently-playing',
-  'user-read-recently-played',
-  'user-top-read'
+  'user-read-playback-state',     // player state, devices, queue
+  'user-modify-playback-state',   // transport controls
+  'user-read-currently-playing',  // now-playing
+  'user-read-recently-played',    // history / energy curve
+  'user-top-read',                // top artists & tracks
+  'user-library-read'             // liked-song detection (/me/tracks/contains)
 ].join(' ');
 const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
 const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';
@@ -252,7 +253,14 @@ async function apiFetch(endpoint, options = {}) {
   }
 
   if (!response.ok && response.status !== 204) {
-    throw new Error(`API error: ${response.status}`);
+    // Surface Spotify's documented error body ({ error: { status, message } })
+    // so callers can give the user a meaningful reason, not just a code.
+    let detail = '';
+    try {
+      const body = await response.json();
+      if (body?.error?.message) detail = ` — ${body.error.message}`;
+    } catch {}
+    throw new Error(`API error: ${response.status}${detail}`);
   }
 
   return response.status === 204 ? null : response.json();
@@ -327,9 +335,8 @@ export function getTopTracks(timeRange = 'short_term', limit = 10) {
   return apiFetch(`/me/top/tracks?time_range=${timeRange}&limit=${limit}`);
 }
 
-export function getAudioFeatures(ids) {
-  return apiFetch(`/audio-features?ids=${ids.slice(0, 100).join(',')}`);
-}
+// NB: /audio-features is deprecated by Spotify (403 for apps created after
+// 2024-11-27) and intentionally not used — energy comes from a local proxy.
 
 export async function checkSavedTracks(ids) {
   return apiFetch(`/me/tracks/contains?ids=${ids.slice(0, 50).join(',')}`);
