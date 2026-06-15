@@ -6,6 +6,9 @@
 # Scratch / dev artifacts
 theme-demo.html
 
+# Internal design/planning docs — not for the public repo
+docs/
+
 # OS / editor junk
 .DS_Store
 Thumbs.db
