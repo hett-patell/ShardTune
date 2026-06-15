@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShardTune Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+  <div id="dash-auth" class="dash-auth hidden">
+    <div class="brand-large">SHARDTUNE</div>
+    <p style="color:var(--fg-faint)">Open the extension popup to connect Spotify first.</p>
+  </div>
+
+  <div id="dash-main" class="dash-wrap">
+
+    <!-- Header -->
+    <header class="dash-header">
+      <div class="dash-header-left">
+        <svg viewBox="0 0 24 24" fill="none" class="dash-logo">
+          <rect x="2" y="6" width="4" height="12" fill="#1db954"/>
+          <rect x="8" y="3" width="4" height="18" fill="#1db954"/>
+          <rect x="14" y="8" width="4" height="8" fill="#1db954"/>
+          <rect x="20" y="10" width="3" height="4" fill="#1db954" opacity="0.4"/>
+        </svg>
+        <span class="dash-brand">SHARDTUNE</span>
+        <span class="dash-subtitle">Dashboard</span>
+      </div>
+      <div class="dash-actions">
+        <button id="refresh-all" class="dash-btn" title="Refresh all data">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14">
+            <path d="M2 8a6 6 0 0111-3M14 8a6 6 0 01-11 3"/>
+            <path d="M13 2v3h-3M3 14v-3h3"/>
+          </svg>
+          Refresh
+        </button>
+        <button id="share-btn" class="dash-btn">Share Card</button>
+        <button id="export-json-btn" class="dash-btn">Export JSON</button>
+      </div>
+    </header>
+
+    <!-- Bento Grid -->
+    <div class="bento">
+
+      <!-- Row 1: Hero + Stats -->
+      <div class="panel span-3 hero-panel" id="hero-panel">
+        <div class="hero-np">
+          <div class="hero-art">
+            <img id="hero-art-img" src="" alt="" style="display:none">
+            <div id="hero-art-placeholder" class="hero-art-placeholder">
+              <svg viewBox="0 0 48 48" fill="#1db954" opacity="0.3">
+                <rect x="16" y="4" width="4" height="28"/>
+                <rect x="32" y="8" width="4" height="24"/>
+                <rect x="20" y="4" width="16" height="4"/>
+                <rect x="8" y="28" width="12" height="8"/>
+                <rect x="24" y="24" width="12" height="8"/>
+              </svg>
+            </div>
+          </div>
+          <div class="hero-meta">
+            <div class="hero-label">NOW PLAYING</div>
+            <div id="hero-track" class="hero-track">Not playing</div>
+            <div id="hero-artist" class="hero-artist">Open Spotify on a device</div>
+            <div id="hero-album" class="hero-album"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-col">
+        <div class="stat-card">
+          <span id="h-stat-min" class="stat-val green">0</span>
+          <span class="stat-label">MINUTES</span>
+        </div>
+        <div class="stat-card">
+          <span id="h-stat-streak" class="stat-val amber">0d</span>
+          <span class="stat-label">STREAK</span>
+        </div>
+        <div class="stat-card">
+          <span id="h-stat-skips" class="stat-val">0</span>
+          <span class="stat-label">SKIPS</span>
+        </div>
+        <div class="stat-card">
+          <span id="h-stat-artists" class="stat-val">0</span>
+          <span class="stat-label">ARTISTS</span>
+        </div>
+      </div>
+
+      <!-- Row 2: Waveform -->
+      <div class="panel span-full">
+        <div class="panel-head">
+          <span class="panel-title">Session Waveform</span>
+          <span id="waveform-count" class="panel-badge"></span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="energy-chart"></canvas>
+          <div id="waveform-tooltip" class="waveform-tooltip"></div>
+        </div>
+      </div>
+
+      <!-- Row 3: Peak Hours + Genre Cloud + Album Mosaic -->
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Peak Hours</span>
+        </div>
+        <div id="heatmap" class="peak-chart"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Session Vibe</span>
+        </div>
+        <div id="session-vibe" class="session-vibe">
+          <div class="empty-panel">Loading...</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Recent Albums</span>
+        </div>
+        <div id="album-mosaic" class="album-mosaic">
+          <div class="empty-panel">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Row 4: Top Artists + Top Tracks -->
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Top Artists</span>
+          <span class="panel-sub">Last 4 weeks</span>
+        </div>
+        <div id="top-artists" class="list-scroll"></div>
+      </div>
+
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Top Tracks</span>
+          <span class="panel-sub">Last 4 weeks</span>
+        </div>
+        <div id="top-tracks" class="list-scroll"></div>
+      </div>
+
+      <!-- Row 5: Listening Log + Friends -->
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Listening Log</span>
+          <span id="log-count" class="panel-badge"></span>
+        </div>
+        <div id="listen-log" class="log-list list-scroll"></div>
+      </div>
+
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Friend Activity</span>
+          <button id="friends-refresh" class="panel-refresh" title="Refresh">&#x21bb;</button>
+        </div>
+        <div id="friends-list" class="friends-list list-scroll">
+          <div class="empty-panel">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Row 6: Vibe Sync + Music Memory -->
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Vibe Sync</span>
+          <button id="vibe-refresh" class="panel-refresh" title="Refresh">&#x21bb;</button>
+        </div>
+        <div id="vibe-sync" class="vibe-sync-list">
+          <div class="empty-panel">Loading...</div>
+        </div>
+      </div>
+
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Music Memory</span>
+        </div>
+        <div id="music-memory" class="music-memory">
+          <div class="empty-panel">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Row 7: Queue + Devices -->
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Queue</span>
+        </div>
+        <div id="dash-queue" class="list-scroll"></div>
+      </div>
+
+      <div class="panel span-2">
+        <div class="panel-head">
+          <span class="panel-title">Devices</span>
+        </div>
+        <div id="device-list" class="device-list"></div>
+      </div>
+
+    </div>
+
+    <!-- Share Preview -->
+    <div id="share-preview" class="share-preview">
+      <canvas id="share-canvas" width="600" height="340"></canvas>
+      <div class="share-actions">
+        <button id="share-copy" class="dash-btn">Copy to clipboard</button>
+        <button id="share-download" class="dash-btn">Download PNG</button>
+        <button id="share-close" class="dash-btn">Close</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="scanlines"></div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

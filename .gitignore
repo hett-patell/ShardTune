@@ -1,0 +1,15 @@
+# Claude Code / tooling working directories
+.claude/
+.remember/
+.superpowers/
+
+# Scratch / dev artifacts
+theme-demo.html
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+
+# Node (none today, defensive)
+node_modules/
