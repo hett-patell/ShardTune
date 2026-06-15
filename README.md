@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="https://github.com/user-attachments/assets/54f85b6b-86e9-43f2-8baa-2ce64418b7d4" alt="ShardTune Banner" width="500">
+
 # 🎧 ShardTune
 
 **The Spotify controller + listening-analytics browser extension for Chrome & Brave that lives in your browser, not rent-free in your head.**
