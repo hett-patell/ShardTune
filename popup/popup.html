@@ -91,10 +91,14 @@
       <div class="sleep-option" data-minutes="30">30 minutes</div>
       <div class="sleep-option" data-minutes="45">45 minutes</div>
       <div class="sleep-option" data-minutes="60">60 minutes</div>
+      <div class="sleep-custom">
+        <input id="sleep-custom-input" class="sleep-custom-input" type="number" min="1" max="480" placeholder="Custom" spellcheck="false">
+        <button id="sleep-custom-btn" class="sleep-custom-btn">Set</button>
+      </div>
       <div class="sleep-option" data-minutes="0">Cancel timer</div>
     </div>
 
-    <!-- Greeting -->
+    <!-- Greeting (Fixed) -->
     <div class="greeting-bar">
       <div>
         <div id="greeting-label" class="greeting-label"></div>
@@ -102,121 +106,141 @@
       </div>
     </div>
 
-    <!-- Now Playing -->
-    <div class="now-playing">
-      <div class="art-frame" id="device-trigger" title="Switch device">
-        <img id="album-art" class="hidden" alt="">
-        <div id="art-placeholder" class="art-placeholder">
-          <svg viewBox="0 0 24 24" fill="#1db954">
-            <rect x="8" y="2" width="2" height="14"/>
-            <rect x="16" y="4" width="2" height="12"/>
-            <rect x="10" y="2" width="8" height="2"/>
-            <rect x="4" y="14" width="6" height="4"/>
-            <rect x="12" y="12" width="6" height="4"/>
+    <!-- Search Bar (Fixed) -->
+    <div class="search-bar">
+      <input id="search-input" class="search-input" type="text" placeholder="Search tracks, artists..." spellcheck="false" autocomplete="off">
+      <div id="search-results" class="search-results hidden"></div>
+    </div>
+
+    <!-- Scrollable Content -->
+    <div class="scroll-content">
+      <!-- Now Playing -->
+      <div class="now-playing">
+        <div class="art-frame" id="device-trigger" title="Switch device">
+          <img id="album-art" class="hidden" alt="">
+          <div id="art-placeholder" class="art-placeholder">
+            <svg viewBox="0 0 24 24" fill="#1db954">
+              <rect x="8" y="2" width="2" height="14"/>
+              <rect x="16" y="4" width="2" height="12"/>
+              <rect x="10" y="2" width="8" height="2"/>
+              <rect x="4" y="14" width="6" height="4"/>
+              <rect x="12" y="12" width="6" height="4"/>
+            </svg>
+          </div>
+        </div>
+        <div class="track-meta">
+          <div id="track-name" class="track-name">Not playing</div>
+          <div id="track-sub" class="track-sub">—</div>
+          <div class="track-actions">
+            <div id="device-tag" class="device-tag hidden">
+              <div class="pulse-dot"></div>
+              <span id="device-label" class="device-name"></span>
+            </div>
+            <button id="like-btn" class="like-btn hidden" title="Save to library">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M8 14s-5.5-3.5-5.5-7.5C2.5 4 4 2.5 5.5 2.5c1.1 0 2 .6 2.5 1.5.5-.9 1.4-1.5 2.5-1.5 1.5 0 3 1.5 3 3 0 4-5.5 7.5-5.5 7.5z"/>
+              </svg>
+            </button>
+            <button id="copy-btn" class="copy-btn hidden" title="Copy track link">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="5" y="5" width="8" height="9"/>
+                <path d="M5 5V3h8v9h-2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Device Picker -->
+      <div id="device-dropdown" class="device-dropdown"></div>
+
+      <!-- Waveform Visualizer -->
+      <div id="waveform" class="waveform"></div>
+
+      <!-- Progress -->
+      <div class="progress-section">
+        <div id="progress-track" class="progress-track">
+          <div id="progress-fill" class="progress-fill">
+            <div class="progress-knob"></div>
+          </div>
+        </div>
+        <div class="progress-times">
+          <span id="time-current">0:00</span>
+          <span id="time-total">0:00</span>
+        </div>
+      </div>
+
+      <!-- Transport -->
+      <div class="transport">
+        <button id="shuffle-btn" class="t-btn subtle" title="Shuffle">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+            <path d="M1 4h3l4 8h4m0-8H8L7 5.5M14 4l-2-2m2 2l-2 2M14 12l-2-2m2 2l-2 2"/>
+          </svg>
+        </button>
+        <button id="prev-btn" class="t-btn" title="Previous">
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="2" width="2" height="12"/>
+            <polygon points="14,2 14,14 5,8"/>
+          </svg>
+        </button>
+        <button id="play-btn" class="t-btn play" title="Play">
+          <svg id="icon-play" viewBox="0 0 16 16" fill="currentColor">
+            <polygon points="4,2 4,14 13,8"/>
+          </svg>
+          <svg id="icon-pause" viewBox="0 0 16 16" fill="currentColor" class="hidden">
+            <rect x="3" y="2" width="4" height="12"/>
+            <rect x="9" y="2" width="4" height="12"/>
+          </svg>
+        </button>
+        <button id="next-btn" class="t-btn" title="Next">
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <polygon points="2,2 2,14 11,8"/>
+            <rect x="13" y="2" width="2" height="12"/>
+          </svg>
+        </button>
+        <button id="repeat-btn" class="t-btn subtle" title="Repeat">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
+            <path d="M2 5h12v4m0-4l-2-2m2 2l-2 2M14 11H2V7m0 4l2 2m-2-2l2-2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Volume -->
+      <div class="volume-row">
+        <div class="vol-icon">
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <rect x="0" y="5" width="4" height="6"/>
+            <polygon points="4,5 9,1 9,15 4,11"/>
+            <rect x="11" y="4" width="1.5" height="8" opacity="0.6"/>
+            <rect x="13.5" y="2" width="1.5" height="12" opacity="0.3"/>
           </svg>
         </div>
+        <div id="vol-track" class="vol-track">
+          <div id="vol-fill" class="vol-fill"></div>
+        </div>
+        <span id="vol-pct" class="vol-pct">—</span>
       </div>
-      <div class="track-meta">
-        <div id="track-name" class="track-name">Not playing</div>
-        <div id="track-sub" class="track-sub">—</div>
-        <div class="track-actions">
-          <div id="device-tag" class="device-tag hidden">
-            <div class="pulse-dot"></div>
-            <span id="device-label" class="device-name"></span>
+
+      <div class="sep"></div>
+
+      <!-- Queue -->
+      <div class="queue-section">
+        <div id="queue-label" class="section-label">Up Next</div>
+        <div id="queue-list" class="q-list">
+          <div class="q-item">
+            <span class="q-idx" style="color:var(--fg-faint)">—</span>
           </div>
-          <button id="copy-btn" class="copy-btn hidden" title="Copy track link">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="5" y="5" width="8" height="9"/>
-              <path d="M5 5V3h8v9h-2"/>
-            </svg>
-          </button>
         </div>
       </div>
-    </div>
 
-    <!-- Device Picker -->
-    <div id="device-dropdown" class="device-dropdown"></div>
-
-    <!-- Waveform Visualizer -->
-    <div id="waveform" class="waveform"></div>
-
-    <!-- Progress -->
-    <div class="progress-section">
-      <div id="progress-track" class="progress-track">
-        <div id="progress-fill" class="progress-fill">
-          <div class="progress-knob"></div>
-        </div>
-      </div>
-      <div class="progress-times">
-        <span id="time-current">0:00</span>
-        <span id="time-total">0:00</span>
+      <!-- Playlists -->
+      <div class="playlists-section">
+        <div class="section-label">Playlists</div>
+        <div id="playlists-list" class="playlists-list"></div>
       </div>
     </div>
 
-    <!-- Transport -->
-    <div class="transport">
-      <button id="shuffle-btn" class="t-btn subtle" title="Shuffle">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
-          <path d="M1 4h3l4 8h4m0-8H8L7 5.5M14 4l-2-2m2 2l-2 2M14 12l-2-2m2 2l-2 2"/>
-        </svg>
-      </button>
-      <button id="prev-btn" class="t-btn" title="Previous">
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <rect x="1" y="2" width="2" height="12"/>
-          <polygon points="14,2 14,14 5,8"/>
-        </svg>
-      </button>
-      <button id="play-btn" class="t-btn play" title="Play">
-        <svg id="icon-play" viewBox="0 0 16 16" fill="currentColor">
-          <polygon points="4,2 4,14 13,8"/>
-        </svg>
-        <svg id="icon-pause" viewBox="0 0 16 16" fill="currentColor" class="hidden">
-          <rect x="3" y="2" width="4" height="12"/>
-          <rect x="9" y="2" width="4" height="12"/>
-        </svg>
-      </button>
-      <button id="next-btn" class="t-btn" title="Next">
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <polygon points="2,2 2,14 11,8"/>
-          <rect x="13" y="2" width="2" height="12"/>
-        </svg>
-      </button>
-      <button id="repeat-btn" class="t-btn subtle" title="Repeat">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">
-          <path d="M2 5h12v4m0-4l-2-2m2 2l-2 2M14 11H2V7m0 4l2 2m-2-2l2-2"/>
-        </svg>
-      </button>
-    </div>
-
-    <!-- Volume -->
-    <div class="volume-row">
-      <div class="vol-icon">
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <rect x="0" y="5" width="4" height="6"/>
-          <polygon points="4,5 9,1 9,15 4,11"/>
-          <rect x="11" y="4" width="1.5" height="8" opacity="0.6"/>
-          <rect x="13.5" y="2" width="1.5" height="12" opacity="0.3"/>
-        </svg>
-      </div>
-      <div id="vol-track" class="vol-track">
-        <div id="vol-fill" class="vol-fill"></div>
-      </div>
-      <span id="vol-pct" class="vol-pct">—</span>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Queue -->
-    <div class="queue-section">
-      <div id="queue-label" class="section-label">Up Next</div>
-      <div id="queue-list" class="q-list">
-        <div class="q-item">
-          <span class="q-idx" style="color:var(--fg-faint)">—</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stats Bar -->
+    <!-- Stats Bar (Fixed) -->
     <div class="bottom-bar">
       <div class="b-stat">
         <span id="stat-min" class="b-val green">0</span>
@@ -326,7 +350,7 @@
           </svg>
           <div>
             <div class="s-about-name">ShardTune</div>
-            <div class="s-about-ver">v1.0.0</div>
+            <div id="s-about-ver" class="s-about-ver">v1.1.0</div>
           </div>
         </div>
         <div class="s-about-credit">
@@ -350,12 +374,13 @@
             networkshard.com
           </a>
         </div>
+        <div id="update-status" class="update-status hidden"></div>
+        <button id="s-check-update" class="s-btn-configure" style="margin-top:10px">Check for Updates</button>
       </div>
 
     </div>
   </div>
 
-  <div class="scanlines"></div>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

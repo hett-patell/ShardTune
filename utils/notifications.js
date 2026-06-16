@@ -14,8 +14,8 @@ let settingsPromise = null;
 
 export function loadSettings() {
   settingsPromise = (async () => {
-    const stored = await chrome.storage.local.get('notif_settings');
-    if (stored.notif_settings) enabled = { ...enabled, ...stored.notif_settings };
+    const stored = await chrome.storage.local.get('notifSettings');
+    if (stored.notifSettings) enabled = { ...enabled, ...stored.notifSettings };
     return enabled;
   })();
   return settingsPromise;
@@ -31,7 +31,7 @@ function ensureSettings() {
 export async function saveSettings(settings) {
   await ensureSettings();   // merge into loaded values, never stale defaults
   enabled = { ...enabled, ...settings };
-  await chrome.storage.local.set({ notif_settings: enabled });
+  await chrome.storage.local.set({ notifSettings: enabled });
   settingsPromise = Promise.resolve(enabled);
 }
 

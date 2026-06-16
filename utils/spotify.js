@@ -6,7 +6,10 @@ const SCOPES = [
   'user-read-currently-playing',  // now-playing
   'user-read-recently-played',    // history / energy curve
   'user-top-read',                // top artists & tracks
-  'user-library-read'             // liked-song detection (/me/tracks/contains)
+  'user-library-read',            // liked-song detection (/me/tracks/contains)
+  'user-library-modify',          // save/unsave tracks
+  'playlist-read-private',        // read user's private playlists
+  'playlist-read-collaborative'   // read collaborative playlists
 ].join(' ');
 const TOKEN_ENDPOINT = 'https://accounts.spotify.com/api/token';
 const AUTH_ENDPOINT = 'https://accounts.spotify.com/authorize';
@@ -76,31 +79,31 @@ export async function authenticate() {
     chrome.tabs.create({ url: authUrl }, tab => {
       const tabId = tab.id;
 
-      function onUpdated(updatedTabId, changeInfo) {
-        if (updatedTabId !== tabId || !changeInfo.url) return;
+      function onBeforeNavigate(details) {
+        if (details.tabId !== tabId || details.frameId !== 0) return;
         // Exact origin + path match (query carries the code) — prefix matching
         // would also accept e.g. /spotify/callback.evil.
         let u, r;
-        try { u = new URL(changeInfo.url); r = new URL(redirectUrl); } catch { return; }
+        try { u = new URL(details.url); r = new URL(redirectUrl); } catch { return; }
         if (u.origin !== r.origin || u.pathname !== r.pathname) return;
 
-        chrome.tabs.onUpdated.removeListener(onUpdated);
+        chrome.webNavigation.onBeforeNavigate.removeListener(onBeforeNavigate);
         chrome.tabs.onRemoved.removeListener(onRemoved);
         chrome.tabs.remove(tabId).catch(() => {});
 
-        handleRedirect(changeInfo.url, state, codeVerifier, clientId, redirectUrl)
+        handleRedirect(details.url, state, codeVerifier, clientId, redirectUrl)
           .then(resolve)
           .catch(reject);
       }
 
       function onRemoved(removedTabId) {
         if (removedTabId !== tabId) return;
-        chrome.tabs.onUpdated.removeListener(onUpdated);
+        chrome.webNavigation.onBeforeNavigate.removeListener(onBeforeNavigate);
         chrome.tabs.onRemoved.removeListener(onRemoved);
         reject(new Error('Auth cancelled — tab was closed'));
       }
 
-      chrome.tabs.onUpdated.addListener(onUpdated);
+      chrome.webNavigation.onBeforeNavigate.addListener(onBeforeNavigate);
       chrome.tabs.onRemoved.addListener(onRemoved);
     });
   });
@@ -213,7 +216,16 @@ export async function logout() {
   await storage.remove('expires_at');
 }
 
+let globalRateLimitedUntil = 0;
+
 async function apiFetch(endpoint, options = {}) {
+  // Block all requests if rate limited
+  if (Date.now() < globalRateLimitedUntil) {
+    const err = new Error('Rate limited');
+    err.retryAfterMs = globalRateLimitedUntil - Date.now();
+    throw err;
+  }
+
   const token = await getValidToken();
   if (!token) throw new Error('Not authenticated');
 
@@ -247,8 +259,11 @@ async function apiFetch(endpoint, options = {}) {
 
   if (response.status === 429) {
     const ra = parseInt(response.headers.get('Retry-After') || '5', 10);
+    const retryAfterMs = (Number.isNaN(ra) ? 5 : ra) * 1000;
+    console.warn('[ShardTune API] Rate limited! Retry-After:', ra, 'seconds');
+    globalRateLimitedUntil = Date.now() + retryAfterMs;
     const err = new Error('Rate limited');
-    err.retryAfterMs = (Number.isNaN(ra) ? 5 : ra) * 1000;
+    err.retryAfterMs = retryAfterMs;
     throw err;
   }
 
@@ -258,12 +273,23 @@ async function apiFetch(endpoint, options = {}) {
     let detail = '';
     try {
       const body = await response.json();
+      console.error('[ShardTune API] Error body:', body);
       if (body?.error?.message) detail = ` — ${body.error.message}`;
     } catch {}
     throw new Error(`API error: ${response.status}${detail}`);
   }
 
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  const text = await response.text();
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+export function isRateLimited() {
+  return Date.now() < globalRateLimitedUntil;
+}
+
+export function getRateLimitRemaining() {
+  return Math.max(0, globalRateLimitedUntil - Date.now());
 }
 
 export function getPlayerState() {
@@ -278,9 +304,19 @@ export function getQueue() {
   return apiFetch('/me/player/queue');
 }
 
-export function play(deviceId) {
+export function play(deviceId, uris, contextUri, offset) {
   const params = deviceId ? `?device_id=${deviceId}` : '';
-  return apiFetch(`/me/player/play${params}`, { method: 'PUT' });
+  let body;
+  if (contextUri) {
+    body = { context_uri: contextUri };
+    if (offset != null) body.offset = offset;
+  } else if (uris?.length) {
+    body = { uris };
+  }
+  return apiFetch(`/me/player/play${params}`, {
+    method: 'PUT',
+    ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
+  });
 }
 
 export function pause() {
@@ -342,7 +378,65 @@ export async function checkSavedTracks(ids) {
   return apiFetch(`/me/tracks/contains?ids=${ids.slice(0, 50).join(',')}`);
 }
 
+export async function saveTrack(id) {
+  return apiFetch('/me/tracks', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: [id] })
+  });
+}
+
+export async function removeTrack(id) {
+  return apiFetch('/me/tracks', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: [id] })
+  });
+}
+
 export async function getTracks(ids) {
   if (!ids.length) return { tracks: [] };
   return apiFetch(`/tracks?ids=${ids.slice(0, 50).join(',')}`);
+}
+
+export async function getUserPlaylists(limit = 50) {
+  return apiFetch(`/me/playlists?limit=${limit}`);
+}
+
+export async function getPlaylistTracks(playlistId, limit = 100) {
+  return apiFetch(`/playlists/${playlistId}/tracks?limit=${limit}`);
+}
+
+// Queue
+
+export async function addToQueue(uri, deviceId) {
+  const params = deviceId ? `?device_id=${deviceId}` : '';
+  return apiFetch(`/me/player/queue${params}`, { method: 'POST' });
+}
+
+// Search
+
+export async function search(query, types = ['track', 'artist'], limit = 10) {
+  const params = new URLSearchParams({
+    q: query,
+    type: types.join(','),
+    limit: String(limit)
+  });
+  return apiFetch(`/search?${params}`);
+}
+
+// Library
+
+export async function getLikedSongs(limit = 50, offset = 0) {
+  return apiFetch(`/me/tracks?limit=${limit}&offset=${offset}`);
+}
+
+// Artists
+
+export async function getArtist(id) {
+  return apiFetch(`/artists/${id}`);
+}
+
+export async function getRelatedArtists(id) {
+  return apiFetch(`/artists/${id}/related-artists`);
 }

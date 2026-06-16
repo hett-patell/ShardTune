@@ -44,13 +44,47 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  width: 380px;
+  width: 640px;
+  height: 500px;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-ui);
   font-size: 12px;
-  overflow-x: hidden;
+  overflow: hidden;
   position: relative;
+}
+
+#player-screen:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.greeting-bar {
+  flex-shrink: 0;
+}
+
+.scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bottom-bar {
+  flex-shrink: 0;
+}
+
+.scroll-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-content::-webkit-scrollbar-thumb {
+  background: var(--elevated);
 }
 
 .hidden { display: none !important; }
@@ -327,6 +361,135 @@ body {
   background: linear-gradient(180deg, rgba(29,185,84,0.04) 0%, transparent 100%);
   border-bottom: 1px solid var(--border-soft);
   position: relative;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   SEARCH
+   ============================================ */
+
+.search-bar {
+  padding: 8px 14px;
+  background: var(--subtle);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 150ms var(--ease);
+}
+
+.search-input:focus {
+  border-color: var(--green);
+}
+
+.search-input::placeholder {
+  color: var(--fg-faint);
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  left: 14px;
+  right: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.search-results.hidden {
+  display: none;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+}
+
+.search-result-item:hover {
+  background: var(--elevated);
+}
+
+.search-result-art {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--elevated);
+}
+
+.search-result-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-sub {
+  font-size: 9px;
+  color: var(--fg-faint);
+}
+
+.search-result-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.search-action-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition: all 150ms var(--ease);
+}
+
+.search-action-btn:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.search-action-btn svg {
+  width: 10px;
+  height: 10px;
 }
 
 /* greeting corner brackets removed — Clean Swiss */
@@ -499,6 +662,36 @@ body {
 }
 
 .copy-btn svg { width: 12px; height: 12px; }
+
+.like-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition: all 150ms var(--ease);
+}
+
+.like-btn:hover {
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.like-btn.liked {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.like-btn.liked svg {
+  fill: var(--green);
+}
+
+.like-btn svg { width: 12px; height: 12px; }
 
 /* ============================================
    WAVEFORM VISUALIZER
@@ -792,6 +985,9 @@ body {
 .q-artist {
   font-size: 10px;
   color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .q-dur {
@@ -802,31 +998,94 @@ body {
 }
 
 /* ============================================
+   PLAYLISTS
+   ============================================ */
+
+.playlists-section {
+  padding: 6px 14px 6px;
+}
+
+.playlists-list {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.playlist-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 2px;
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.playlist-item:hover { background: var(--surface); }
+
+.playlist-art {
+  width: 32px;
+  height: 32px;
+  background: var(--elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.playlist-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.playlist-info {
+  width: 100%;
+  min-width: 0;
+}
+
+.playlist-name {
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
+
+.playlist-count {
+  display: none;
+}
+
+/* ============================================
    BOTTOM STATS BAR
    ============================================ */
 
 .bottom-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  padding: 10px 12px;
+  padding: 4px 12px;
   background: var(--subtle);
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .b-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 1px;
   position: relative;
-  padding: 6px 4px;
+  padding: 2px 4px;
 }
 
 /* stat-card corner bracket removed — Clean Swiss */
 
 .b-val {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--fg);
   line-height: 1;
@@ -843,7 +1102,7 @@ body {
 
 .b-label {
   font-family: var(--font-ui);
-  font-size: 9px;
+  font-size: 7px;
   font-weight: 600;
   color: var(--fg-faint);
   letter-spacing: 0.08em;
@@ -881,6 +1140,55 @@ body {
 .sleep-option:hover {
   background: var(--elevated);
   color: var(--green);
+}
+
+.sleep-custom {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.sleep-custom-input {
+  flex: 1;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 150ms var(--ease);
+}
+
+.sleep-custom-input:focus {
+  border-color: var(--green);
+}
+
+.sleep-custom-input::placeholder {
+  color: var(--fg-faint);
+}
+
+.sleep-custom-btn {
+  height: 26px;
+  padding: 0 10px;
+  background: var(--green);
+  border: none;
+  border-radius: var(--radius);
+  color: #000;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms var(--ease);
+}
+
+.sleep-custom-btn:hover {
+  background: var(--green-dim);
 }
 
 /* ============================================
@@ -1279,6 +1587,27 @@ body {
   flex-shrink: 0;
 }
 
+/* --- Update Status --- */
+
+.update-status {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  text-align: center;
+}
+
+.update-status a {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+.update-status a:hover {
+  color: var(--green-dim);
+}
+
 /* --- Toast --- */
 
 .s-toast {
@@ -1304,10 +1633,4 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
-/* ============================================
-   SCANLINES
-   ============================================ */
 
-.scanlines {
-  display: none; /* CRT scanline overlay removed — Clean Swiss */
-}

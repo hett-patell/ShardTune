@@ -1,16 +1,22 @@
+import { esc, safeImg, fmt } from '../utils/dom.js';
+
 let port = null;
 let portAlive = false;
+let shouldReconnect = true;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 
 function connectPort() {
+  if (!shouldReconnect) return;
   port = chrome.runtime.connect({ name: 'popup' });
   portAlive = true;
 
   port.onDisconnect.addListener(() => {
     portAlive = false;
-    setTimeout(connectPort, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+    if (shouldReconnect) {
+      setTimeout(connectPort, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+    }
   });
 
   port.onMessage.addListener(msg => {
@@ -21,9 +27,20 @@ function connectPort() {
   });
 }
 
+let rateLimitedUntil = 0;
+
 function send(msg) {
+  if (Date.now() < rateLimitedUntil) {
+    console.warn('[ShardTune Popup] Rate limited, skipping:', msg.action);
+    return;
+  }
   if (portAlive && port) {
-    try { port.postMessage(msg); } catch { portAlive = false; }
+    try { port.postMessage(msg); } catch (e) { 
+      console.error('[ShardTune Popup] Send failed:', e);
+      portAlive = false; 
+    }
+  } else {
+    console.warn('[ShardTune Popup] Port not alive:', { portAlive, port: !!port });
   }
 }
 
@@ -50,6 +67,7 @@ const els = {
   trackSub: $('track-sub'),
   deviceTag: $('device-tag'),
   deviceLabel: $('device-label'),
+  likeBtn: $('like-btn'),
   copyBtn: $('copy-btn'),
   waveform: $('waveform'),
   progressTrack: $('progress-track'),
@@ -68,6 +86,7 @@ const els = {
   volPct: $('vol-pct'),
   queueList: $('queue-list'),
   queueLabel: $('queue-label'),
+  playlistsList: $('playlists-list'),
   statMin: $('stat-min'),
   statSkips: $('stat-skips'),
   statArtists: $('stat-artists'),
@@ -93,10 +112,15 @@ const els = {
   linkWeb: $('link-web'),
   shortcutsList: $('shortcuts-list'),
   sConfigureShortcuts: $('s-configure-shortcuts'),
+  sCheckUpdate: $('s-check-update'),
+  updateStatus: $('update-status'),
+  sAboutVer: $('s-about-ver'),
 };
 
 let currentState = null;
 let currentTrackUri = null;
+let currentTrackId = null;
+let isTrackSaved = false;
 let sleepInterval = null;
 let sleepExpiresAt = null;
 let authenticated = false;
@@ -128,9 +152,9 @@ function updateGreeting() {
 }
 
 // Load cached name immediately so the greeting shows your name without a flash
-chrome.storage.local.get('display_name', r => {
-  if (r.display_name && !userName) {
-    userName = r.display_name;
+chrome.storage.local.get('displayName', r => {
+  if (r.displayName && !userName) {
+    userName = r.displayName;
     updateGreeting();
   }
 });
@@ -262,8 +286,8 @@ function loadShortcuts() {
         const key = cmd.shortcut || 'Not set';
         const notSet = !cmd.shortcut;
         return `<div class="s-shortcut">
-          <span>${escapeHtml(cmd.description || cmd.name)}</span>
-          <kbd class="${notSet ? 's-kbd-unset' : ''}">${escapeHtml(key)}</kbd>
+          <span>${esc(cmd.description || cmd.name)}</span>
+          <kbd class="${notSet ? 's-kbd-unset' : ''}">${esc(key)}</kbd>
         </div>`;
       }).join('');
   });
@@ -272,6 +296,131 @@ function loadShortcuts() {
 els.sConfigureShortcuts.addEventListener('click', () => {
   chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });
+
+// --- Check for Updates ---
+
+els.sCheckUpdate.addEventListener('click', () => {
+  els.sCheckUpdate.textContent = 'Checking...';
+  els.sCheckUpdate.disabled = true;
+  send({ action: 'check-for-updates' });
+});
+
+function showUpdateStatus(updateInfo) {
+  els.updateStatus.classList.remove('hidden');
+  if (updateInfo.available) {
+    els.updateStatus.innerHTML = `
+      <div style="color:var(--green);margin-bottom:4px">Update available: v${esc(updateInfo.remoteVersion)}</div>
+      <a href="${esc(updateInfo.releaseUrl)}" target="_blank" style="color:var(--green);text-decoration:underline;font-size:10px">View on GitHub</a>
+    `;
+  } else {
+    els.updateStatus.innerHTML = '<div style="color:var(--fg-faint)">You\'re on the latest version</div>';
+  }
+  els.sCheckUpdate.textContent = 'Check for Updates';
+  els.sCheckUpdate.disabled = false;
+}
+
+// --- Search ---
+
+const searchInput = $('search-input');
+const searchResults = $('search-results');
+let searchTimeout = null;
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const query = searchInput.value.trim();
+  if (query.length < 2) {
+    searchResults.classList.add('hidden');
+    return;
+  }
+  searchTimeout = setTimeout(() => {
+    send({ action: 'search', query, types: ['track', 'artist'], limit: 8 });
+  }, 300);
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    searchInput.value = '';
+    searchResults.classList.add('hidden');
+  }
+});
+
+document.addEventListener('click', e => {
+  if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+    searchResults.classList.add('hidden');
+  }
+});
+
+function renderSearchResults(data) {
+  if (!data?.tracks?.items?.length && !data?.artists?.items?.length) {
+    searchResults.innerHTML = '<div style="padding:12px;text-align:center;color:var(--fg-faint);font-size:10px">No results found</div>';
+    searchResults.classList.remove('hidden');
+    return;
+  }
+
+  let html = '';
+
+  // Artists
+  if (data.artists?.items?.length) {
+    html += data.artists.items.slice(0, 3).map(a => {
+      const img = a.images?.[2]?.url || a.images?.[0]?.url || '';
+      return `<div class="search-result-item" data-uri="${esc(a.uri)}" data-type="artist">
+        <div class="search-result-art round">${img ? `<img src="${safeImg(img)}" alt="">` : ''}</div>
+        <div class="search-result-info">
+          <div class="search-result-name">${esc(a.name)}</div>
+          <div class="search-result-sub">Artist</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Tracks
+  if (data.tracks?.items?.length) {
+    html += data.tracks.items.slice(0, 5).map(t => {
+      const img = t.album?.images?.[2]?.url || '';
+      const artist = t.artists?.map(a => a.name).join(', ') || '';
+      return `<div class="search-result-item" data-uri="${esc(t.uri)}" data-type="track">
+        <div class="search-result-art">${img ? `<img src="${safeImg(img)}" alt="">` : ''}</div>
+        <div class="search-result-info">
+          <div class="search-result-name">${esc(t.name)}</div>
+          <div class="search-result-sub">${esc(artist)}</div>
+        </div>
+        <div class="search-result-actions">
+          <button class="search-action-btn" data-action="queue" data-uri="${esc(t.uri)}" title="Add to queue">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2v12M2 8h12"/></svg>
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  searchResults.innerHTML = html;
+  searchResults.classList.remove('hidden');
+
+  // Click handlers
+  searchResults.querySelectorAll('.search-result-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('.search-action-btn')) return;
+      const uri = el.dataset.uri;
+      if (!uri) return;
+      // Play the track
+      send({ action: 'play', uris: [uri] });
+      searchInput.value = '';
+      searchResults.classList.add('hidden');
+      els.iconPlay.classList.add('hidden');
+      els.iconPause.classList.remove('hidden');
+      startProgressTimer();
+    });
+  });
+
+  searchResults.querySelectorAll('.search-action-btn[data-action="queue"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uri = btn.dataset.uri;
+      if (!uri) return;
+      send({ action: 'add-to-queue', uri });
+      showToast('Added to queue');
+    });
+  });
+}
 
 // --- Waveform ---
 
@@ -335,9 +484,11 @@ function showPlayer() {
   els.authScreen.classList.add('hidden');
   els.playerScreen.classList.remove('hidden');
   updateGreeting();
+  // Stagger requests to avoid rate limits
   send({ action: 'get-queue' });
-  send({ action: 'get-sleep' });
-  send({ action: 'get-profile' });
+  setTimeout(() => send({ action: 'get-sleep' }), 200);
+  setTimeout(() => send({ action: 'get-profile' }), 400);
+  setTimeout(() => send({ action: 'get-playlists' }), 600);
 }
 
 function showAuthError(message) {
@@ -353,11 +504,11 @@ function startProgressTimer() {
   stopProgressTimer();
   progressTimer = setInterval(() => {
     if (!currentState?.is_playing || !currentState?.item) return;
-    currentState.progress_ms += 1000;
     const duration = currentState.item.duration_ms || 1;
-    const pct = Math.min((currentState.progress_ms / duration) * 100, 100);
+    currentState.progress_ms = Math.min(currentState.progress_ms + 1000, duration);
+    const pct = (currentState.progress_ms / duration) * 100;
     els.progressFill.style.width = `${pct}%`;
-    els.timeCurrent.textContent = formatTime(currentState.progress_ms);
+    els.timeCurrent.textContent = fmt(currentState.progress_ms);
     updateWaveform(currentState);
   }, 1000);
 }
@@ -413,6 +564,15 @@ function renderState(state, availableDevices) {
 
   currentState = state;
   currentTrackUri = track.external_urls?.spotify || null;
+  
+  // Check if track changed and update like button
+  if (track.id !== currentTrackId) {
+    currentTrackId = track.id;
+    isTrackSaved = false;
+    els.likeBtn.classList.remove('liked');
+    els.likeBtn.classList.remove('hidden');
+    checkIfTrackSaved(track.id);
+  }
 
   els.trackName.textContent = track.name || 'Unknown';
 
@@ -449,8 +609,8 @@ function renderState(state, availableDevices) {
   const duration = track.duration_ms || 1;
   const pct = (progress / duration) * 100;
   els.progressFill.style.width = `${pct}%`;
-  els.timeCurrent.textContent = formatTime(progress);
-  els.timeTotal.textContent = formatTime(duration);
+  els.timeCurrent.textContent = fmt(progress);
+  els.timeTotal.textContent = fmt(duration);
 
   if (state.device) {
     const canVolume = state.device.supports_volume !== false;
@@ -523,21 +683,102 @@ function renderQueue(data) {
   }
 
   els.queueList.innerHTML = tracks.map((t, i) => {
-    const artUrl = t.album?.images?.[2]?.url || '';
+    const artUrl = t.album?.images?.[1]?.url || t.album?.images?.[0]?.url || '';
     const artHtml = artUrl ? `<img src="${safeImg(artUrl)}" alt="">` : '';
-    const dur = formatTime(t.duration_ms || 0);
-    const artist = t.artists?.map(a => a.name).join(', ') || '';
+    const dur = fmt(t.duration_ms || 0);
+    const artists = t.artists || [];
+    const artist = artists.length > 1 ? `${artists[0].name}...` : (artists[0]?.name || '');
+    const uri = t.uri || '';
+    const contextUri = t.album?.uri || '';
+    const trackData = JSON.stringify({ name: t.name || '', artist, artUrl, durationMs: t.duration_ms || 0 });
     return `
-      <div class="q-item">
+      <div class="q-item" data-uri="${esc(uri)}" data-id="${esc(t.id || '')}" data-context-uri="${esc(contextUri)}" data-track="${esc(trackData)}">
         <span class="q-idx">${String(i + 1).padStart(2, '0')}</span>
         <div class="q-art">${artHtml}</div>
         <div class="q-info">
-          <div class="q-name">${escapeHtml(t.name || '')}</div>
-          <div class="q-artist">${escapeHtml(artist)}</div>
+          <div class="q-name">${esc(t.name || '')}</div>
+          <div class="q-artist">${esc(artist)}</div>
         </div>
         <span class="q-dur">${dur}</span>
       </div>`;
   }).join('');
+
+  els.queueList.querySelectorAll('.q-item[data-uri]').forEach(el => {
+    el.addEventListener('click', () => {
+      const uri = el.dataset.uri;
+      const contextUri = el.dataset.contextUri;
+      if (!uri) return;
+      if (contextUri) {
+        send({ action: 'play', contextUri, offset: { uri } });
+      } else {
+        send({ action: 'play', uris: [uri] });
+      }
+      // Optimistic UI update
+      try {
+        const track = JSON.parse(el.dataset.track);
+        els.trackName.textContent = track.name;
+        els.trackSub.textContent = track.artist;
+        if (track.artUrl) {
+          els.albumArt.src = track.artUrl;
+          els.albumArt.classList.remove('hidden');
+          els.artPlaceholder.classList.add('hidden');
+        }
+        els.progressFill.style.width = '0%';
+        els.timeCurrent.textContent = '0:00';
+        els.timeTotal.textContent = fmt(track.durationMs);
+        currentState = { is_playing: true, progress_ms: 0, item: { duration_ms: track.durationMs } };
+      } catch {}
+      els.iconPlay.classList.add('hidden');
+      els.iconPause.classList.remove('hidden');
+      startProgressTimer();
+    });
+  });
+}
+
+// --- Playlists ---
+
+function renderPlaylists(data) {
+  
+  if (!data) {
+    els.playlistsList.innerHTML = '<div style="font-size:10px;color:var(--fg-faint);padding:4px 0;grid-column:1/-1">No data received</div>';
+    return;
+  }
+  
+  if (!data.items) {
+    els.playlistsList.innerHTML = '<div style="font-size:10px;color:var(--fg-faint);padding:4px 0;grid-column:1/-1">No items in response</div>';
+    return;
+  }
+  
+  if (!data.items.length) {
+    els.playlistsList.innerHTML = '<div style="font-size:10px;color:var(--fg-faint);padding:4px 0;grid-column:1/-1">No playlists found</div>';
+    return;
+  }
+
+  const html = data.items.slice(0, 8).map(p => {
+    const artUrl = p.images?.[2]?.url || p.images?.[0]?.url || '';
+    const artHtml = artUrl ? `<img src="${safeImg(artUrl)}" alt="">` : '';
+    const contextUri = p.uri || '';
+    return `
+      <div class="playlist-item" data-context-uri="${esc(contextUri)}" title="${esc(p.name || '')}">
+        <div class="playlist-art">${artHtml}</div>
+        <div class="playlist-info">
+          <div class="playlist-name">${esc(p.name || '')}</div>
+        </div>
+      </div>`;
+  }).join('');
+  
+  els.playlistsList.innerHTML = html;
+
+  els.playlistsList.querySelectorAll('.playlist-item[data-context-uri]').forEach(el => {
+    el.addEventListener('click', () => {
+      const contextUri = el.dataset.contextUri;
+      if (!contextUri) return;
+      send({ action: 'play-playlist', contextUri, deviceId: lastDeviceId });
+      els.iconPlay.classList.add('hidden');
+      els.iconPause.classList.remove('hidden');
+      startProgressTimer();
+    });
+  });
 }
 
 // --- Transport Controls ---
@@ -567,10 +808,10 @@ function playOnDevice(deviceId) {
 
 function showPlayDevicePicker() {
   els.deviceDropdown.innerHTML = availableDeviceList.map(d => `
-    <div class="device-option" data-play-id="${escAttr(d.id)}">
+    <div class="device-option" data-play-id="${esc(d.id)}">
       <div>
-        <div class="d-name">${escapeHtml(d.name)}</div>
-        <div class="d-type">${escapeHtml(d.type)} · Play here</div>
+        <div class="d-name">${esc(d.name)}</div>
+        <div class="d-type">${esc(d.type)} · Play here</div>
       </div>
     </div>`).join('');
 
@@ -612,7 +853,7 @@ els.progressTrack.addEventListener('click', e => {
   send({ action: 'seek', positionMs: posMs });
   currentState.progress_ms = posMs;
   els.progressFill.style.width = `${pct * 100}%`;
-  els.timeCurrent.textContent = formatTime(posMs);
+  els.timeCurrent.textContent = fmt(posMs);
 });
 
 // --- Volume ---
@@ -638,6 +879,23 @@ els.copyBtn.addEventListener('click', async () => {
   } catch {}
 });
 
+// --- Like/Save Track ---
+
+els.likeBtn.addEventListener('click', () => {
+  if (!currentTrackId) return;
+  send({ action: 'toggle-save', trackId: currentTrackId, saved: isTrackSaved });
+});
+
+function updateLikeButton() {
+  els.likeBtn.classList.toggle('liked', isTrackSaved);
+  els.likeBtn.title = isTrackSaved ? 'Remove from library' : 'Save to library';
+}
+
+function checkIfTrackSaved(trackId) {
+  if (!trackId) return;
+  send({ action: 'check-saved', trackId });
+}
+
 // --- Sleep Timer ---
 
 els.sleepBtn.addEventListener('click', e => {
@@ -653,6 +911,31 @@ els.sleepDropdown.addEventListener('click', e => {
   send({ action: 'set-sleep', minutes });
   els.sleepDropdown.classList.remove('open');
 });
+
+const sleepCustomInput = $('sleep-custom-input');
+const sleepCustomBtn = $('sleep-custom-btn');
+
+function setCustomSleep() {
+  const minutes = parseInt(sleepCustomInput.value);
+  if (!minutes || minutes < 1 || minutes > 480) return;
+  send({ action: 'set-sleep', minutes });
+  els.sleepDropdown.classList.remove('open');
+  sleepCustomInput.value = '';
+}
+
+sleepCustomBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  setCustomSleep();
+});
+
+sleepCustomInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.stopPropagation();
+    setCustomSleep();
+  }
+});
+
+sleepCustomInput.addEventListener('click', e => e.stopPropagation());
 
 function updateSleepBadge() {
   if (!sleepExpiresAt || Date.now() >= sleepExpiresAt) {
@@ -686,10 +969,10 @@ function renderDevices(data) {
   }
 
   els.deviceDropdown.innerHTML = data.devices.map(d => `
-    <div class="device-option ${d.is_active ? 'active' : ''}" data-id="${escAttr(d.id)}">
+    <div class="device-option ${d.is_active ? 'active' : ''}" data-id="${esc(d.id)}">
       <div>
-        <div class="d-name">${escapeHtml(d.name)}</div>
-        <div class="d-type">${escapeHtml(d.type)}</div>
+        <div class="d-name">${esc(d.name)}</div>
+        <div class="d-type">${esc(d.type)}</div>
       </div>
     </div>`).join('');
 
@@ -710,6 +993,7 @@ els.dashboardBtn.addEventListener('click', () => {
 // --- Logout ---
 
 els.logoutBtn.addEventListener('click', () => {
+  shouldReconnect = false;
   send({ action: 'logout' });
   userName = null;
   stopProgressTimer();
@@ -762,7 +1046,7 @@ function handleMessage(msg) {
       const name = msg.data?.display_name || msg.data?.id;
       if (name) {
         userName = name;
-        chrome.storage.local.set({ display_name: name });
+        chrome.storage.local.set({ displayName: name });
         updateGreeting();
       }
       break;
@@ -798,39 +1082,34 @@ function handleMessage(msg) {
         els.notifFocus.checked = msg.data.focus !== false;
       }
       break;
+    case 'saved-status':
+      if (msg.data.trackId === currentTrackId) {
+        isTrackSaved = msg.data.saved;
+        updateLikeButton();
+        showToast(isTrackSaved ? 'Saved to library' : 'Removed from library');
+      }
+      break;
+    case 'playlists':
+      renderPlaylists(msg.data);
+      break;
+    case 'update-info':
+      showUpdateStatus(msg.data);
+      break;
+    case 'search-results':
+      renderSearchResults(msg.data);
+      break;
+    case 'queue-added':
+      showToast('Added to queue');
+      break;
     case 'error':
       console.error('ShardTune:', msg.data);
+      if (msg.data?.includes('Rate limited')) {
+        showToast('Rate limited by Spotify. Please wait.');
+      } else {
+        showToast(msg.data || 'Something went wrong');
+      }
       break;
   }
-}
-
-// --- Helpers ---
-
-function formatTime(ms) {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
-
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-// Attribute-safe escape — also encodes quotes, which escapeHtml does NOT.
-// Required for any value placed inside a quoted HTML attribute.
-function escAttr(str) {
-  return String(str == null ? '' : str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// Only allow https URLs into src="" — blocks javascript:/data: schemes and
-// attribute breakout via a stray quote in the URL.
-function safeImg(url) {
-  return /^https:\/\//i.test(url || '') ? escAttr(url) : '';
 }
 
 // --- Toast ---

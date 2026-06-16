@@ -1,21 +1,58 @@
-const port = chrome.runtime.connect({ name: 'dashboard' });
+import { esc, safeImg, fmt } from '../utils/dom.js';
+import { energyProxy } from '../utils/analytics.js';
+
 const $ = id => document.getElementById(id);
+
+let port = null;
+let portAlive = false;
+let reconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+
+function connectPort() {
+  port = chrome.runtime.connect({ name: 'dashboard' });
+  portAlive = true;
+
+  port.onDisconnect.addListener(() => {
+    portAlive = false;
+    setTimeout(connectPort, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+  });
+
+  port.onMessage.addListener(msg => {
+    reconnectDelay = 1000;
+    handleMessage(msg);
+  });
+
+  // Small delay to ensure port is fully connected before requesting data
+  setTimeout(requestAll, 100);
+}
+
+function send(msg) {
+  if (portAlive && port) {
+    try { port.postMessage(msg); } catch { portAlive = false; }
+  }
+}
 
 let currentState = null;
 let analyticsData = null;
 let historyData = null;
 
 setLoadingStates();
-requestAll();
+connectPort();
 
 function requestAll() {
-  port.postMessage({ action: 'get-queue' });
-  port.postMessage({ action: 'get-devices' });
-  port.postMessage({ action: 'get-analytics' });
-  port.postMessage({ action: 'get-history' });
-  port.postMessage({ action: 'get-friends' });
-  port.postMessage({ action: 'get-vibe-sync' });
-  port.postMessage({ action: 'get-music-memory' });
+  const actions = [
+    'get-analytics',
+    'get-devices',
+    'get-history',
+    'get-music-memory',
+    'get-friends',
+    'get-vibe-sync',
+    'get-liked-songs'
+  ];
+  actions.forEach((action, i) => {
+    setTimeout(() => send({ action }), i * 50);
+  });
 }
 
 function setLoadingStates() {
@@ -24,7 +61,6 @@ function setLoadingStates() {
   $('top-tracks').innerHTML = l;
   $('listen-log').innerHTML = l;
   $('heatmap').innerHTML = l;
-  $('dash-queue').innerHTML = l;
   $('device-list').innerHTML = l;
 }
 
@@ -42,7 +78,7 @@ $('refresh-all').addEventListener('click', () => {
 
 // --- Messages ---
 
-port.onMessage.addListener(msg => {
+function handleMessage(msg) {
   switch (msg.type) {
     case 'auth-success':
       $('dash-auth')?.classList.add('hidden');
@@ -71,13 +107,14 @@ port.onMessage.addListener(msg => {
       safe(() => renderLog(msg.data.history), 'log');
       safe(() => renderSessionVibe(msg.data.energyCurve), 'vibe');
       safe(() => renderAlbumMosaic(msg.data.history, msg.data.topTracks), 'mosaic');
+      // Use energy proxy for taste profile (audio-features deprecated)
+      if (msg.data.topTracks?.length) {
+        safe(() => renderTasteProfile(msg.data.topTracks), 'taste');
+      }
       if (msg.data.errors?.length) {
         console.warn('[ShardTune]', msg.data.errors);
         showApiWarning(msg.data.errors);
       }
-      break;
-    case 'queue':
-      safe(() => renderQueue(msg.data), 'queue');
       break;
     case 'devices':
       safe(() => renderDevices(msg.data), 'devices');
@@ -91,12 +128,18 @@ port.onMessage.addListener(msg => {
     case 'music-memory':
       safe(() => renderMusicMemory(msg.data), 'music-memory');
       break;
+    case 'audio-features':
+      // Audio features deprecated for new apps - use energy proxy instead
+      break;
+    case 'liked-songs':
+      safe(() => renderLibraryStats(msg.data), 'library');
+      break;
     case 'auth-required':
       $('dash-auth')?.classList.remove('hidden');
       $('dash-main')?.classList.add('hidden');
       break;
   }
-});
+}
 
 function hasApiData(d) {
   return d && (d.energyCurve?.length || d.topArtists?.length || d.topTracks?.length || d.history?.length);
@@ -156,6 +199,7 @@ function renderStats(data) {
 }
 
 function animateVal(el, target) {
+  if (target == null || isNaN(target)) return;
   const current = parseInt(el.textContent) || 0;
   if (current === target) return;
   const steps = 12;
@@ -269,25 +313,36 @@ function renderHeatmap(hours) {
 
   const total = hours.reduce((a, b) => a + b, 0);
   if (total === 0) {
-    c.innerHTML = '<div class="empty-panel" style="height:100px;display:flex;align-items:center;justify-content:center">No listening data yet</div>';
+    c.innerHTML = '<div class="empty-panel">No listening data yet</div>';
     return;
   }
 
   const max = Math.max(...hours, 1);
-  c.innerHTML = hours.map((val, i) => {
-    const pct = max > 0 ? (val / max) * 100 : 0;
-    const opacity = val > 0 ? 0.4 + (pct / 100) * 0.6 : 0.15;
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  // Create a single row showing aggregate hours
+  const cellsHtml = hours.map((val, i) => {
+    const intensity = val > 0 ? 0.15 + (val / max) * 0.85 : 0.04;
     const h = String(i).padStart(2, '0');
     const tip = `${h}:00 · ${val} play${val !== 1 ? 's' : ''}`;
-    const showLabel = i % 3 === 0;
-
-    return `<div class="peak-col">
-      <div class="peak-bar-wrap">
-        <div class="peak-bar" style="height:${Math.max(2, pct)}%;opacity:${opacity}" data-tip="${tip}"></div>
-      </div>
-      ${showLabel ? `<span class="peak-label">${h}</span>` : '<span class="peak-label"></span>'}
-    </div>`;
+    return `<div class="peak-cell" style="background:rgba(29,185,84,${intensity})" data-tip="${tip}"></div>`;
   }).join('');
+
+  c.innerHTML = `
+    <div class="peak-row">
+      <span class="peak-period">All</span>
+      <div class="peak-cells">${cellsHtml}</div>
+    </div>
+    <div class="peak-labels">
+      <span class="peak-label">00</span>
+      <span class="peak-label">03</span>
+      <span class="peak-label">06</span>
+      <span class="peak-label">09</span>
+      <span class="peak-label">12</span>
+      <span class="peak-label">15</span>
+      <span class="peak-label">18</span>
+      <span class="peak-label">21</span>
+    </div>`;
 }
 
 // === Session Vibe ===
@@ -326,20 +381,20 @@ function renderSessionVibe(energyData) {
 
   c.innerHTML = `
     <div class="vibe-top">
-      <div class="vibe-emoji">${emoji}</div>
-      <div class="vibe-mood">
-        <div class="vibe-label">${mood}</div>
-        <div class="vibe-desc">${desc}</div>
+      <div class="vibe-icon">${emoji}</div>
+      <div>
+        <div class="vibe-mood-label">${mood}</div>
+        <div class="vibe-mood-desc">${desc}</div>
       </div>
     </div>
-    <div class="vibe-bar-wrap">
+    <div class="vibe-bars">
       ${bars.map(b => `<div class="vibe-row">
         <span class="vibe-row-label">${b.label}</span>
         <div class="vibe-bar"><div class="vibe-fill" style="width:${b.value}%;background:${b.color}"></div></div>
         <span class="vibe-row-val">${b.value}%</span>
       </div>`).join('')}
     </div>
-    <div class="vibe-tracks">Based on ${values.length} track${values.length !== 1 ? 's' : ''}</div>`;
+    <div class="vibe-footer">Based on ${values.length} track${values.length !== 1 ? 's' : ''}</div>`;
 }
 
 // === Album Mosaic ===
@@ -366,7 +421,7 @@ function renderAlbumMosaic(history, topTracks) {
   }
 
   c.innerHTML = albums.map(a =>
-    `<div class="mosaic-cell" data-album="${escAttr(a.name)}"><img src="${safeImg(a.url)}" alt="" loading="lazy"></div>`
+    `<div class="mosaic-cell" data-album="${esc(a.name)}"><img src="${safeImg(a.url)}" alt="" loading="lazy"></div>`
   ).join('');
 }
 
@@ -419,30 +474,6 @@ function renderTopTracks(tracks) {
   }).join('');
 }
 
-// === Queue ===
-
-function renderQueue(data) {
-  const c = $('dash-queue');
-  if (!data?.queue?.length) {
-    c.innerHTML = '<div class="empty-panel">Queue empty</div>';
-    return;
-  }
-
-  c.innerHTML = data.queue.slice(0, 8).map((t, i) => {
-    const art = t.album?.images?.[2]?.url || '';
-    const artist = t.artists?.map(a => a.name).join(', ') || '';
-    return `<div class="rank-row">
-      <span class="rank-num">${String(i + 1).padStart(2, '0')}</span>
-      <div class="rank-art">${art ? `<img src="${safeImg(art)}" alt="">` : ''}</div>
-      <div class="rank-info">
-        <div class="rank-name">${esc(t.name || '')}</div>
-        <div class="rank-sub">${esc(artist)}</div>
-      </div>
-      <span class="rank-right">${fmt(t.duration_ms)}</span>
-    </div>`;
-  }).join('');
-}
-
 // === Devices ===
 
 function renderDevices(data) {
@@ -466,14 +497,14 @@ function renderDevices(data) {
         <div class="dev-name">${esc(d.name)}</div>
         <div class="dev-type">${esc(d.type)}${d.is_active ? ' · Active' : ''}</div>
       </div>
-      ${d.is_active ? '' : `<button class="transfer-btn" data-id="${escAttr(d.id)}">Transfer</button>`}
+      ${d.is_active ? '' : `<button class="transfer-btn" data-id="${esc(d.id)}">Transfer</button>`}
     </div>`;
   }).join('');
 
   c.querySelectorAll('.transfer-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      port.postMessage({ action: 'transfer', deviceId: btn.dataset.id });
-      setTimeout(() => port.postMessage({ action: 'get-devices' }), 1000);
+      send({ action: 'transfer', deviceId: btn.dataset.id });
+      setTimeout(() => send({ action: 'get-devices' }), 1000);
     });
   });
 }
@@ -557,31 +588,55 @@ function timeAgo(ts) {
 
 $('friends-refresh').addEventListener('click', () => {
   $('friends-list').innerHTML = '<div class="empty-panel">Loading...</div>';
-  port.postMessage({ action: 'get-friends' });
+  send({ action: 'get-friends' });
 });
 
 // === Vibe Sync ===
 
 $('vibe-refresh').addEventListener('click', () => {
   $('vibe-sync').innerHTML = '<div class="empty-panel">Loading...</div>';
-  port.postMessage({ action: 'get-vibe-sync' });
+  send({ action: 'get-vibe-sync' });
 });
 
 function vibeMood(energy) {
-  if (energy >= 80) return { label: 'grind mode', emoji: '\u{1F525}' };
-  if (energy >= 65) return { label: 'upbeat flow', emoji: '\u{26A1}' };
-  if (energy >= 50) return { label: 'cruise control', emoji: '\u{1F3B5}' };
-  if (energy >= 35) return { label: 'chill wave', emoji: '\u{1F30A}' };
-  return { label: 'zen mode', emoji: '\u{1F319}' };
+  if (energy >= 80) return 'grind mode';
+  if (energy >= 65) return 'upbeat flow';
+  if (energy >= 50) return 'cruise control';
+  if (energy >= 35) return 'chill wave';
+  return 'zen mode';
 }
 
-function vibeMessage(name, score, myMood, theirMood) {
-  const same = myMood.label === theirMood.label;
-  if (score >= 85 && same) return `You and <strong>${esc(name)}</strong> are both in ${myMood.label} ${myMood.emoji}`;
-  if (score >= 85) return `You and <strong>${esc(name)}</strong> are in perfect sync ${myMood.emoji}`;
-  if (score >= 70) return `<strong>${esc(name)}</strong> is vibing close — ${theirMood.label} ${theirMood.emoji}`;
-  if (score >= 50) return `<strong>${esc(name)}</strong> is on a different wavelength — ${theirMood.label} ${theirMood.emoji}`;
-  return `<strong>${esc(name)}</strong> is worlds apart — ${theirMood.label} ${theirMood.emoji}`;
+function calculateVibeScore(my, friend) {
+  if (my.energy == null || friend.energy == null) return null;
+
+  // Factor 1: Energy similarity (50%)
+  const energyDiff = Math.abs(my.energy - friend.energy);
+  const energyScore = Math.max(0, 100 - energyDiff * 1.2);
+
+  // Factor 2: Artist match (35%)
+  let artistScore = 0;
+  if (my.artist && friend.artist) {
+    if (my.artist === friend.artist) {
+      artistScore = 100; // Same artist
+    } else if (my.artist.includes(friend.artist) || friend.artist.includes(my.artist)) {
+      artistScore = 70; // Partial match (e.g., "feat." collaborations)
+    }
+  }
+
+  // Factor 3: Time alignment (15%)
+  const hourDiff = Math.abs(my.hour - friend.hour);
+  const timeScore = Math.max(0, 100 - hourDiff * 20);
+
+  return Math.round(energyScore * 0.5 + artistScore * 0.35 + timeScore * 0.15);
+}
+
+function vibeMessage(name, score, myEnergy, friendEnergy, sameArtist) {
+  if (score >= 85 && sameArtist) return `You and <strong>${esc(name)}</strong> are both vibing to the same artist`;
+  if (score >= 85) return `You and <strong>${esc(name)}</strong> are in perfect sync`;
+  if (score >= 70 && sameArtist) return `You and <strong>${esc(name)}</strong> share the same taste`;
+  if (score >= 70) return `<strong>${esc(name)}</strong> is vibing close to you`;
+  if (score >= 50) return `<strong>${esc(name)}</strong> is on a different wavelength`;
+  return `<strong>${esc(name)}</strong> is worlds apart`;
 }
 
 function scoreClass(s) {
@@ -606,11 +661,15 @@ function renderVibeSync(data) {
   }
 
   if (data.myEnergy == null) {
-    c.innerHTML = '<div class="vs-no-play">Play something first to see vibe matches</div>';
+    c.innerHTML = '<div class="empty-panel">Play something first to see vibe matches</div>';
     return;
   }
 
-  const myMood = vibeMood(data.myEnergy);
+  const myData = {
+    energy: data.myEnergy,
+    artist: data.myArtist || '',
+    hour: data.myHour || new Date().getHours()
+  };
 
   c.innerHTML = data.friends.map(f => {
     if (f.energy == null) {
@@ -624,9 +683,18 @@ function renderVibeSync(data) {
       </div>`;
     }
 
-    const theirMood = vibeMood(f.energy);
-    const score = Math.max(0, Math.round(100 - Math.abs(data.myEnergy - f.energy)));
-    const msg = vibeMessage(f.user.name, score, myMood, theirMood);
+    const friendData = {
+      energy: f.energy,
+      artist: f.artist || '',
+      hour: f.hour || myData.hour
+    };
+
+    const score = calculateVibeScore(myData, friendData);
+    const sameArtist = myData.artist && friendData.artist && 
+                       (myData.artist === friendData.artist || 
+                        myData.artist.includes(friendData.artist) || 
+                        friendData.artist.includes(myData.artist));
+    const msg = vibeMessage(f.user.name, score, myData.energy, friendData.energy, sameArtist);
 
     return `<div class="vs-row">
       <div class="vs-avatar">${f.user.image ? `<img src="${safeImg(f.user.image)}">` : `<div class="vs-avatar-ph">${esc((f.user.name || '?')[0])}</div>`}</div>
@@ -672,9 +740,8 @@ function memoryInsights(mem) {
     const dayName = DAY_FULL[peak.day];
     const mood = vibeMood(peak.avgEnergy);
     insights.push({
-      emoji: '\u{1F4CD}',
       headline: `${dayName} ${period}s are your peak`,
-      detail: `Most active at ${String(peak.hour).padStart(2, '0')}:00 — usually in ${mood.label} ${mood.emoji}`
+      detail: `Most active at ${String(peak.hour).padStart(2, '0')}:00 — usually ${mood}`
     });
   }
 
@@ -693,9 +760,8 @@ function memoryInsights(mem) {
 
   if (topDay !== peak?.day) {
     insights.push({
-      emoji: '\u{1F4C5}',
       headline: `${DAY_FULL[topDay]} is your biggest listening day`,
-      detail: `Average vibe: ${topMood.label} ${topMood.emoji}`
+      detail: `Average vibe: ${topMood.label}`
     });
   }
 
@@ -708,17 +774,15 @@ function memoryInsights(mem) {
     const nightE = nightSlots.reduce((s, sl) => s + sl.avgEnergy * sl.plays, 0) / nightPlays;
     const nm = vibeMood(nightE);
     insights.push({
-      emoji: '\u{1F319}',
       headline: 'Night owl detected',
-      detail: `Your late nights lean ${nm.label} ${nm.emoji}`
+      detail: `Your late nights lean ${nm.label}`
     });
   } else if (morningPlays > nightPlays * 2 && morningPlays >= 3) {
     const mornE = morningSlots.reduce((s, sl) => s + sl.avgEnergy * sl.plays, 0) / morningPlays;
     const mm = vibeMood(mornE);
     insights.push({
-      emoji: '\u{2600}\u{FE0F}',
       headline: 'Early bird vibes',
-      detail: `Mornings are ${mm.label} ${mm.emoji} for you`
+      detail: `Mornings are ${mm.label} for you`
     });
   }
 
@@ -736,22 +800,20 @@ function memoryInsights(mem) {
       const higher = diff > 0 ? 'Weekends' : 'Weekdays';
       const lower = diff > 0 ? 'weekdays' : 'weekends';
       insights.push({
-        emoji: diff > 0 ? '\u{1F389}' : '\u{1F4BB}',
         headline: `${higher} hit different`,
-        detail: `Energy goes ${diff > 0 ? 'up' : 'down'} by ${Math.abs(diff)}% compared to ${lower}`
+        detail: `Energy goes ${diff > 0 ? 'up' : 'down'} by ${Math.abs(diff)}% vs ${lower}`
       });
     }
   }
 
   if (insights.length === 0) {
     insights.push({
-      emoji: '\u{1F4CA}',
       headline: 'Building your profile',
       detail: `${totalPlays} data points collected — patterns emerge after a few days`
     });
   }
 
-  return insights.slice(0, 4);
+  return insights.slice(0, 3);
 }
 
 function renderMusicMemory(mem) {
@@ -773,14 +835,20 @@ function renderMusicMemory(mem) {
 
   const gridHtml = buildMemoryGrid(mem, maxPlays);
 
-  c.innerHTML = insights.map(i => `
-    <div class="mm-insight">
-      <div class="mm-emoji">${i.emoji}</div>
-      <div class="mm-text">
-        <div class="mm-headline">${i.headline}</div>
-        <div class="mm-detail">${i.detail}</div>
+  c.innerHTML = `
+    <div class="mm-wrap">
+      <div class="mm-insights">
+        ${insights.map(i => `
+          <div class="mm-insight">
+            <div class="mm-dot"></div>
+            <div class="mm-text">
+              <div class="mm-headline">${i.headline}</div>
+              <div class="mm-detail">${i.detail}</div>
+            </div>
+          </div>`).join('')}
       </div>
-    </div>`).join('') + gridHtml;
+      ${gridHtml}
+    </div>`;
 }
 
 function buildMemoryGrid(mem, maxPlays) {
@@ -788,7 +856,7 @@ function buildMemoryGrid(mem, maxPlays) {
 
   html += '<div class="mm-day-label"></div>';
   for (let h = 0; h < 24; h++) {
-    if (h % 4 === 0) html += `<span class="mm-hour-label" style="grid-column:span 1">${String(h).padStart(2, '0')}</span>`;
+    if (h % 6 === 0) html += `<span class="mm-hour-label">${String(h).padStart(2, '0')}</span>`;
     else html += '<span></span>';
   }
 
@@ -796,20 +864,158 @@ function buildMemoryGrid(mem, maxPlays) {
     html += `<div class="mm-day-label">${DAYS[d]}</div>`;
     for (let h = 0; h < 24; h++) {
       const slot = mem[d * 24 + h];
-      const intensity = slot.plays > 0 ? 0.15 + (slot.plays / maxPlays) * 0.85 : 0.04;
-      const avgE = slot.plays > 0 ? slot.energy / slot.plays : 0;
-      let color;
-      if (slot.plays === 0) color = 'var(--elevated)';
-      else if (avgE >= 70) color = `rgba(239,68,68,${intensity})`;
-      else if (avgE >= 50) color = `rgba(29,185,84,${intensity})`;
-      else color = `rgba(139,92,246,${intensity})`;
+      const intensity = slot.plays > 0 ? 0.2 + (slot.plays / maxPlays) * 0.8 : 0.04;
+      const color = slot.plays > 0 ? `rgba(29,185,84,${intensity})` : 'var(--elevated)';
+      const tip = `${DAYS[d]} ${String(h).padStart(2, '0')}:00 · ${slot.plays} play${slot.plays !== 1 ? 's' : ''}`;
 
-      html += `<div class="mm-cell" style="background:${color}" title="${DAYS[d]} ${String(h).padStart(2, '0')}:00 · ${slot.plays} plays${slot.plays > 0 ? ' · avg energy ' + Math.round(avgE) : ''}"></div>`;
+      html += `<div class="mm-cell" style="background:${color}" data-tip="${tip}"></div>`;
     }
   }
 
   html += '</div>';
+  
+  // Legend
+  html += `<div class="mm-legend">
+    <span class="mm-legend-label">Less</span>
+    <div class="mm-legend-scale">
+      <div class="mm-legend-cell" style="background:var(--elevated)"></div>
+      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.2)"></div>
+      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.4)"></div>
+      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.6)"></div>
+      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.8)"></div>
+      <div class="mm-legend-cell" style="background:rgba(29,185,84,1.0)"></div>
+    </div>
+    <span class="mm-legend-label">More</span>
+  </div>`;
+  
   return html;
+}
+
+// === Taste Profile ===
+
+function renderTasteProfile(tracks) {
+  const c = $('taste-profile');
+  if (!tracks?.length) {
+    c.innerHTML = '<div class="empty-panel">No tracks data available</div>';
+    return;
+  }
+
+  // Use energy proxy for each track
+  const energies = tracks.map(t => energyProxy(t));
+  const avgEnergy = Math.round(energies.reduce((s, e) => s + e, 0) / energies.length);
+  const maxEnergy = Math.max(...energies);
+  const minEnergy = Math.min(...energies);
+  const range = maxEnergy - minEnergy;
+
+  // Calculate avg popularity and duration
+  const avgPopularity = Math.round(tracks.reduce((s, t) => s + (t.popularity || 50), 0) / tracks.length);
+  const avgDuration = Math.round(tracks.reduce((s, t) => s + (t.duration_ms || 0), 0) / tracks.length / 1000);
+  const explicitCount = tracks.filter(t => t.explicit).length;
+  const explicitPct = Math.round((explicitCount / tracks.length) * 100);
+
+  // Determine mood
+  let mood, moodDesc;
+  if (avgEnergy >= 80) { mood = 'High Energy'; moodDesc = 'Intense and upbeat'; }
+  else if (avgEnergy >= 60) { mood = 'Energetic'; moodDesc = 'Active and lively'; }
+  else if (avgEnergy >= 40) { mood = 'Balanced'; moodDesc = 'Mix of vibes'; }
+  else { mood = 'Chill'; moodDesc = 'Relaxed and mellow'; }
+
+  const bars = [
+    { label: 'Energy', value: avgEnergy, color: 'var(--green)' },
+    { label: 'Popularity', value: avgPopularity, color: '#22d3ee' },
+    { label: 'Explicit', value: explicitPct, color: 'var(--amber)' },
+    { label: 'Variety', value: Math.min(range * 2, 100), color: '#8b5cf6' }
+  ];
+
+  c.innerHTML = `
+    <div class="taste-bars">
+      ${bars.map(b => `<div class="taste-bar-row">
+        <span class="taste-bar-label">${b.label}</span>
+        <div class="taste-bar-track"><div class="taste-bar-fill" style="width:${b.value}%;background:${b.color}"></div></div>
+        <span class="taste-bar-val">${b.value}%</span>
+      </div>`).join('')}
+    </div>
+    <div class="taste-summary">
+      <div class="taste-stat">
+        <div class="taste-stat-val">${avgEnergy}%</div>
+        <div class="taste-stat-label">AVG ENERGY</div>
+      </div>
+      <div class="taste-stat">
+        <div class="taste-stat-val">${avgDuration}s</div>
+        <div class="taste-stat-label">AVG LENGTH</div>
+      </div>
+      <div class="taste-stat">
+        <div class="taste-stat-val">${tracks.length}</div>
+        <div class="taste-stat-label">TRACKS</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:var(--fg-faint);text-align:center">${mood} · ${moodDesc}</div>`;
+}
+
+// === Library Stats ===
+
+function renderLibraryStats(data) {
+  const c = $('library-stats');
+  const badge = $('library-count');
+
+  if (!data?.items?.length) {
+    c.innerHTML = '<div class="empty-panel">No liked songs found</div>';
+    return;
+  }
+
+  const items = data.items;
+  const total = data.total || items.length;
+  if (badge) badge.textContent = `${total} tracks`;
+
+  // Calculate stats
+  const addedThisMonth = items.filter(i => {
+    const added = new Date(i.added_at);
+    const monthAgo = new Date();
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    return added > monthAgo;
+  }).length;
+
+  const uniqueArtists = new Set();
+  items.forEach(i => {
+    i.track?.artists?.forEach(a => uniqueArtists.add(a.id));
+  });
+
+  // Recent additions
+  const recent = items.slice(0, 5);
+
+  c.innerHTML = `
+    <div class="library-summary">
+      <div class="library-stat">
+        <div class="library-stat-val green">${total}</div>
+        <div class="library-stat-label">LIKED SONGS</div>
+      </div>
+      <div class="library-stat">
+        <div class="library-stat-val amber">${addedThisMonth}</div>
+        <div class="library-stat-label">ADDED THIS MONTH</div>
+      </div>
+      <div class="library-stat">
+        <div class="library-stat-val">${uniqueArtists.size}</div>
+        <div class="library-stat-label">UNIQUE ARTISTS</div>
+      </div>
+    </div>
+    <div class="library-recent">
+      <div class="library-recent-title">Recently Added</div>
+      ${recent.map(i => {
+        const t = i.track;
+        if (!t) return '';
+        const art = t.album?.images?.[2]?.url || '';
+        const artist = t.artists?.map(a => a.name).join(', ') || '';
+        const date = new Date(i.added_at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+        return `<div class="library-recent-item">
+          <div class="library-recent-art">${art ? `<img src="${safeImg(art)}" alt="">` : ''}</div>
+          <div class="library-recent-info">
+            <div class="library-recent-name">${esc(t.name || '')}</div>
+            <div class="library-recent-artist">${esc(artist)}</div>
+          </div>
+          <div class="library-recent-date">${date}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 // === Share Card ===
@@ -854,7 +1060,7 @@ function renderShareCard() {
   ctx.fillRect(50, 26, 4, 8);
   ctx.globalAlpha = 1;
 
-  ctx.font = '11px "Press Start 2P"';
+  ctx.font = '600 12px "Inter Tight"';
   ctx.fillStyle = '#1db954';
   ctx.fillText('SHARDTUNE', 62, 36);
 
@@ -890,7 +1096,7 @@ function renderShareCard() {
       ctx.fillStyle = stat.color;
       ctx.fillText(String(stat.val), x, 210);
 
-      ctx.font = '7px "Press Start 2P"';
+      ctx.font = '600 9px "IBM Plex Mono"';
       ctx.fillStyle = '#55555e';
       ctx.fillText(stat.label, x, 228);
     });
@@ -901,7 +1107,7 @@ function renderShareCard() {
     ctx.fillStyle = '#f59e0b';
     ctx.fillText(`${analyticsData.streak.count}d`, 20, 290);
 
-    ctx.font = '7px "Press Start 2P"';
+    ctx.font = '600 9px "IBM Plex Mono"';
     ctx.fillStyle = '#92400e';
     ctx.fillText('STREAK', 20, 306);
   }
@@ -954,31 +1160,6 @@ $('export-json-btn').addEventListener('click', () => {
 });
 
 // === Helpers ===
-
-function fmt(ms) {
-  const s = Math.floor((ms || 0) / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function esc(str) {
-  const d = document.createElement('div');
-  d.textContent = str || '';
-  return d.innerHTML;
-}
-
-// Attribute-safe escape — also encodes quotes, which esc() does NOT.
-// Required for any value placed inside a quoted HTML attribute.
-function escAttr(str) {
-  return String(str == null ? '' : str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// Only allow https URLs into src="" — blocks javascript:/data: schemes and
-// attribute breakout via a stray quote in the URL.
-function safeImg(url) {
-  return /^https:\/\//i.test(url || '') ? escAttr(url) : '';
-}
 
 function trunc(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;

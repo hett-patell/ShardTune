@@ -3,6 +3,7 @@ import * as analytics from './utils/analytics.js';
 import * as storage from './utils/storage.js';
 import * as buddylist from './utils/buddylist.js';
 import * as notifs from './utils/notifications.js';
+import { checkForUpdates, getUpdateInfo } from './utils/update.js';
 
 const POLL_FAST = 5000;
 const POLL_SLOW_MINUTES = 1;
@@ -12,9 +13,17 @@ const ALARM_SLEEP = 'shardtune-sleep';
 let ports = new Set();
 let pollInterval = null;
 let lastState = null;
+let lastPlaylists = null; // cached playlists for new connections
+let lastHistory = null;   // cached history for new connections
+let lastHistoryTime = 0;  // timestamp of last history fetch
+let friendsCache = null;  // cached friend data
+let friendsCacheTime = 0; // timestamp of last friend fetch
+let lastStreakCount = -1; // last known streak count
+let pausedTicks = 0;      // consecutive ticks with no playback
 let isAuthenticated = false;
 let polling = null;       // single-flight guard for poll()
 let pollTimer = null;     // debounce timer for post-command refresh
+let rateLimitedUntil = 0; // timestamp until which we should skip polling
 
 // --- Port Management ---
 
@@ -36,6 +45,12 @@ chrome.runtime.onConnect.addListener(port => {
     port.postMessage({ type: 'auth-success' });
     if (lastState) {
       port.postMessage({ type: 'state', data: lastState });
+    }
+    if (lastPlaylists) {
+      port.postMessage({ type: 'playlists', data: lastPlaylists });
+    }
+    if (lastHistory) {
+      port.postMessage({ type: 'history', data: lastHistory });
     }
   }
 
@@ -92,9 +107,15 @@ chrome.alarms.onAlarm.addListener(alarm => {
     broadcast({ type: 'sleep-fired' });
     storage.remove('sleepTimer');
   }
+  if (alarm.name === 'shardtune-rate-limit') {
+    rateLimitedUntil = 0;
+    if (ports.size > 0) startFastPolling();
+    startSlowPolling();
+  }
 });
 
 async function doPoll() {
+  if (Date.now() < rateLimitedUntil) return;
   try {
     const token = await spotify.getValidToken();
     if (!token) {
@@ -123,12 +144,11 @@ async function doPoll() {
         // Peak hours / music memory count "plays" — increment once per track,
         // not per poll tick, so they don't skew with poll frequency.
         if (trackChanged && state.item) {
-          await analytics.updatePeakHours();
-          analytics.updateMusicMemory(analytics.energyProxy(state.item)).catch(() => {});
+          analytics.updateTrackAnalytics(analytics.energyProxy(state.item)).catch(() => {});
         }
       }
 
-      if (state.item) {
+      if (trackChanged && state.item) {
         notifs.onTrackChange(state.item).catch(() => {});
       }
     }
@@ -150,22 +170,59 @@ async function doPoll() {
 
     const streak = await analytics.getStreak();
     broadcast({ type: 'analytics', data: { session, streak } });
+
+    // Auto-downshift to slow polling when paused for extended period
+    if (state && !state.is_playing) {
+      pausedTicks++;
+      if (pausedTicks > 6) { // ~30 seconds of paused
+        stopFastPolling();
+        startSlowPolling();
+      }
+    } else {
+      pausedTicks = 0;
+    }
   } catch (err) {
     if (err.message?.includes('Not authenticated')) {
+      console.warn('[ShardTune BG] Not authenticated');
       isAuthenticated = false;
       broadcast({ type: 'auth-required' });
     } else if (err.retryAfterMs) {
-      // Rate limited — pause the fast interval and resume after Retry-After
-      // so we don't keep hammering a cooling-down endpoint.
+      // Rate limited — pause both fast and slow polling until the cooldown
+      // expires so we don't keep hammering a cooling-down endpoint.
+      console.warn('[ShardTune BG] Rate limited! Pausing for', err.retryAfterMs, 'ms');
+      broadcast({ type: 'error', data: `Rate limited. Retry after ${Math.round(err.retryAfterMs/1000)}s` });
       stopFastPolling();
-      setTimeout(() => { if (ports.size > 0) startFastPolling(); }, err.retryAfterMs);
+      chrome.alarms.clear(ALARM_POLL);
+      rateLimitedUntil = Date.now() + err.retryAfterMs;
+      // Use alarm instead of setTimeout (setTimeout dies with SW eviction)
+      chrome.alarms.create('shardtune-rate-limit', { delayInMinutes: Math.max(err.retryAfterMs / 60000, 0.1) });
     }
   }
+}
+
+// --- Cached Friend Fetch ---
+
+const FRIENDS_CACHE_TTL = 30000; // 30 seconds
+
+async function getFriendsCached() {
+  if (friendsCache && Date.now() - friendsCacheTime < FRIENDS_CACHE_TTL) {
+    return friendsCache;
+  }
+  friendsCache = await buddylist.getFriendActivity();
+  friendsCacheTime = Date.now();
+  return friendsCache;
 }
 
 // --- Port Message Handling ---
 
 async function handlePortMessage(msg, port) {
+  // Skip all API requests if rate limited (except non-API actions)
+  if (spotify.isRateLimited() && !['check-client-id', 'set-client-id', 'get-analytics', 'get-notif-settings', 'set-notif-settings', 'clear-analytics', 'logout'].includes(msg.action)) {
+    const remaining = spotify.getRateLimitRemaining();
+    port.postMessage({ type: 'error', data: `Rate limited. Retry in ${Math.round(remaining / 60000)} minutes` });
+    return;
+  }
+
   try {
     switch (msg.action) {
       case 'check-client-id': {
@@ -198,7 +255,7 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'play':
-        await spotify.play(msg.deviceId);
+        await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
         schedulePoll(300);
         break;
       case 'pause':
@@ -235,27 +292,32 @@ async function handlePortMessage(msg, port) {
         break;
       case 'get-devices': {
         const devices = await spotify.getDevices();
-        port.postMessage({ type: 'devices', data: devices });
+        broadcast({ type: 'devices', data: devices });
         break;
       }
       case 'get-queue': {
         const queue = await spotify.getQueue();
-        port.postMessage({ type: 'queue', data: queue });
+        broadcast({ type: 'queue', data: queue });
         break;
       }
       case 'get-profile': {
         const profile = await spotify.getUserProfile();
-        port.postMessage({ type: 'profile', data: profile });
+        broadcast({ type: 'profile', data: profile });
         break;
       }
       case 'get-analytics': {
         const session = analytics.getSession();
         const streak = await analytics.getStreak();
         const peakHours = await analytics.getPeakHours();
-        port.postMessage({ type: 'analytics', data: { session, streak, peakHours } });
+        broadcast({ type: 'analytics', data: { session, streak, peakHours } });
         break;
       }
       case 'get-history': {
+        // Use cache if available and fresh (5 minutes)
+        if (lastHistory && Date.now() - lastHistoryTime < 300000) {
+          broadcast({ type: 'history', data: lastHistory });
+          break;
+        }
         const errors = [];
         const [recent, topArtists, topTracks] = await Promise.all([
           spotify.getRecentlyPlayed(50).catch(e => { errors.push(`recently-played: ${e.message}`); return null; }),
@@ -288,17 +350,16 @@ async function handlePortMessage(msg, port) {
           };
         })?.reverse() || [];
 
-        port.postMessage({
-          type: 'history',
-          data: {
-            energyCurve,
-            peakHours: storedPeaks,
-            history,
-            topArtists: topArtists?.items || [],
-            topTracks: topTracks?.items || [],
-            errors
-          }
-        });
+        lastHistory = {
+          energyCurve,
+          peakHours: storedPeaks,
+          history,
+          topArtists: topArtists?.items || [],
+          topTracks: topTracks?.items || [],
+          errors
+        };
+        lastHistoryTime = Date.now();
+        broadcast({ type: 'history', data: lastHistory });
         break;
       }
       case 'set-sleep': {
@@ -321,17 +382,20 @@ async function handlePortMessage(msg, port) {
       }
       case 'get-friends': {
         try {
-          const friends = await buddylist.getFriendActivity();
-          port.postMessage({ type: 'friends', data: { friends } });
+          const friends = await getFriendsCached();
+          broadcast({ type: 'friends', data: { friends } });
         } catch (e) {
-          port.postMessage({ type: 'friends', data: { friends: [], error: e.message } });
+          broadcast({ type: 'friends', data: { friends: [], error: e.message } });
         }
         break;
       }
       case 'get-vibe-sync': {
         try {
-          const friends = await buddylist.getFriendActivity();
-          const myEnergy = lastState?.item ? analytics.energyProxy(lastState.item) : null;
+          const friends = await getFriendsCached();
+          const myTrack = lastState?.item;
+          const myEnergy = myTrack ? analytics.energyProxy(myTrack) : null;
+          const myArtist = myTrack?.artists?.[0]?.name?.toLowerCase() || '';
+          const myHour = new Date().getHours();
 
           const trackIds = friends
             .map(f => f.track.uri?.split(':').pop())
@@ -351,18 +415,28 @@ async function handlePortMessage(msg, port) {
             const tid = f.track.uri?.split(':').pop();
             const track = trackMap[tid];
             const friendEnergy = track ? analytics.energyProxy(track) : null;
-            return { ...f, energy: friendEnergy };
+            const friendArtist = f.track.artist?.toLowerCase() || '';
+            const friendHour = f.timestamp ? new Date(f.timestamp).getHours() : myHour;
+            return { ...f, energy: friendEnergy, artist: friendArtist, hour: friendHour };
           });
 
-          port.postMessage({ type: 'vibe-sync', data: { myEnergy, friends: results } });
+          broadcast({ 
+            type: 'vibe-sync', 
+            data: { 
+              myEnergy, 
+              myArtist,
+              myHour,
+              friends: results 
+            } 
+          });
         } catch (e) {
-          port.postMessage({ type: 'vibe-sync', data: { myEnergy: null, friends: [], error: e.message } });
+          broadcast({ type: 'vibe-sync', data: { myEnergy: null, friends: [], error: e.message } });
         }
         break;
       }
       case 'get-music-memory': {
         const mem = await analytics.getMusicMemory();
-        port.postMessage({ type: 'music-memory', data: mem });
+        broadcast({ type: 'music-memory', data: mem });
         break;
       }
       case 'get-notif-settings': {
@@ -372,6 +446,62 @@ async function handlePortMessage(msg, port) {
       case 'set-notif-settings': {
         await notifs.saveSettings(msg.settings);
         port.postMessage({ type: 'notif-settings', data: notifs.getSettings() });
+        break;
+      }
+      case 'check-saved': {
+        const result = await spotify.checkSavedTracks([msg.trackId]);
+        broadcast({ type: 'saved-status', data: { trackId: msg.trackId, saved: result?.[0] || false } });
+        break;
+      }
+      case 'toggle-save': {
+        if (msg.saved) {
+          await spotify.removeTrack(msg.trackId);
+        } else {
+          await spotify.saveTrack(msg.trackId);
+        }
+        broadcast({ type: 'saved-status', data: { trackId: msg.trackId, saved: !msg.saved } });
+        break;
+      }
+      case 'get-playlists': {
+        const playlists = await spotify.getUserPlaylists(msg.limit || 50);
+        // Store for new connections
+        lastPlaylists = playlists;
+        // Use broadcast to ensure popup receives it even if port reconnects
+        broadcast({ type: 'playlists', data: playlists });
+        break;
+      }
+      case 'play-playlist': {
+        await spotify.play(msg.deviceId, undefined, msg.contextUri);
+        schedulePoll(300);
+        break;
+      }
+      case 'get-update-info': {
+        const updateInfo = await getUpdateInfo();
+        port.postMessage({ type: 'update-info', data: updateInfo });
+        break;
+      }
+      case 'check-for-updates': {
+        const updateInfo = await checkForUpdates();
+        port.postMessage({ type: 'update-info', data: updateInfo });
+        break;
+      }
+      case 'add-to-queue': {
+        await spotify.addToQueue(msg.uri, msg.deviceId);
+        port.postMessage({ type: 'queue-added', data: { uri: msg.uri } });
+        schedulePoll(300);
+        break;
+      }
+      case 'search': {
+        const results = await spotify.search(msg.query, msg.types, msg.limit);
+        port.postMessage({ type: 'search-results', data: results });
+        break;
+      }
+      case 'get-audio-features':
+        // Deprecated - audio-features API returns 403 for new apps
+        break;
+      case 'get-liked-songs': {
+        const liked = await spotify.getLikedSongs(msg.limit || 50, msg.offset || 0);
+        broadcast({ type: 'liked-songs', data: liked });
         break;
       }
       case 'clear-analytics':
@@ -394,7 +524,11 @@ async function handlePortMessage(msg, port) {
         break;
     }
   } catch (err) {
-    port.postMessage({ type: 'error', data: err.message });
+    try {
+      port.postMessage({ type: 'error', data: err.message });
+    } catch (e) {
+      console.error('[ShardTune BG] Error sending error message:', err.message);
+    }
   }
 }
 

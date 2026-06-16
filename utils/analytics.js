@@ -187,7 +187,9 @@ export async function updateStreak() {
   const today = localDateStr(new Date());
   if (streakCache.lastDate === today) return streakCache;
 
-  const yesterday = localDateStr(new Date(Date.now() - 86400000));
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yesterday = localDateStr(d);
   if (streakCache.lastDate === yesterday) {
     streakCache.count++;
   } else {
@@ -201,10 +203,10 @@ export async function updateStreak() {
 export async function getStreak() {
   if (!streakCache) streakCache = (await storage.get('streak')) || { count: 0, lastDate: null };
   const today = localDateStr(new Date());
-  const yesterday = localDateStr(new Date(Date.now() - 86400000));
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const yesterday = localDateStr(d);
   if (streakCache.lastDate !== today && streakCache.lastDate !== yesterday) {
-    // Streak broken (gap > 1 day): normalize the cache so it stops reporting
-    // a stale count, and persist the reset.
     if (streakCache.count !== 0) {
       streakCache.count = 0;
       await storage.set('streak', streakCache);
@@ -215,13 +217,6 @@ export async function getStreak() {
 }
 
 // --- Peak Hours ---
-
-export async function updatePeakHours() {
-  if (!peakHoursCache) peakHoursCache = (await storage.get('peakHours')) || new Array(24).fill(0);
-  peakHoursCache[new Date().getHours()]++;
-  await storage.set('peakHours', peakHoursCache);
-  return peakHoursCache;
-}
 
 export async function getPeakHours() {
   if (!peakHoursCache) peakHoursCache = (await storage.get('peakHours')) || new Array(24).fill(0);
@@ -234,16 +229,22 @@ function emptyMemory() {
   return new Array(168).fill(null).map(() => ({ plays: 0, energy: 0 }));
 }
 
-export async function updateMusicMemory(energy) {
-  if (!musicMemoryCache) musicMemoryCache = (await storage.get('musicMemory')) || emptyMemory();
-  const now = new Date();
-  const slot = now.getDay() * 24 + now.getHours();
-  musicMemoryCache[slot].plays++;
-  musicMemoryCache[slot].energy += energy;
-  await storage.set('musicMemory', musicMemoryCache);
-}
-
 export async function getMusicMemory() {
   if (!musicMemoryCache) musicMemoryCache = (await storage.get('musicMemory')) || emptyMemory();
   return musicMemoryCache;
+}
+
+// Combined write — avoids two separate storage.set calls per track change.
+export async function updateTrackAnalytics(energy) {
+  if (!peakHoursCache) peakHoursCache = (await storage.get('peakHours')) || new Array(24).fill(0);
+  if (!musicMemoryCache) musicMemoryCache = (await storage.get('musicMemory')) || emptyMemory();
+
+  const now = new Date();
+  peakHoursCache[now.getHours()]++;
+
+  const slot = now.getDay() * 24 + now.getHours();
+  musicMemoryCache[slot].plays++;
+  musicMemoryCache[slot].energy += energy;
+
+  await storage.setAll({ peakHours: peakHoursCache, musicMemory: musicMemoryCache });
 }
