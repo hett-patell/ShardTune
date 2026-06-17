@@ -19,19 +19,19 @@ let commandQueue = [];
 let processingCommand = false;
 
 // --- Guest state ---
-let guestState = 'DISCONNECTED'; // DISCONNECTED|CONNECTING|SYNCING|SYNCED|DESYNCED|RECONNECTING
+let guestState = 'DISCONNECTED'; // DISCONNECTED|CONNECTING|SYNCING|SYNCED|RECONNECTING
 let lastSnapshotSeq = -1;
 
 // --- Heartbeat & reconnect ---
 let heartbeatInterval = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let syncingTimeout = null;
 const MAX_RECONNECT = 5;
 const HEARTBEAT_INTERVAL = 4000;
-const HEARTBEAT_WARN = 5000;
 const HEARTBEAT_DEAD = 15000;
 const SYNC_INTERVAL = 3000;
-const DRIFT_THRESHOLD = 2000;
+const SYNCING_TIMEOUT = 15000;
 
 // --- Trystero actions ---
 let stateAction = null;    // host→guest: STATE_SNAPSHOT, QUEUE_UPDATE
@@ -158,6 +158,17 @@ function setGuestState(state) {
   if (guestState === state) return;
   guestState = state;
   sendToBg({ action: 'jam-sync-status', data: { state: guestState } });
+
+  if (syncingTimeout) { clearTimeout(syncingTimeout); syncingTimeout = null; }
+  if (state === 'SYNCING' || state === 'CONNECTING') {
+    syncingTimeout = setTimeout(() => {
+      if (guestState === 'SYNCING' || guestState === 'CONNECTING') {
+        sendToBg({ action: 'jam-error', data: 'No response from host' });
+        setGuestState('DISCONNECTED');
+        attemptReconnect();
+      }
+    }, SYNCING_TIMEOUT);
+  }
 }
 
 function guestHandleSnapshot(snapshot) {
@@ -344,6 +355,7 @@ function handleJoin(code, name) {
 function cleanup() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+  if (syncingTimeout) { clearTimeout(syncingTimeout); syncingTimeout = null; }
   stopHeartbeat();
   destroyRoom();
   peerNames.clear();
@@ -399,8 +411,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     case 'jam-forward-request':
       sendRequest(msg.data.type, msg.data);
-      break;
-    case 'jam-host-command-done':
       break;
   }
 });

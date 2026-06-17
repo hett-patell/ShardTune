@@ -428,7 +428,12 @@ function renderSearchResults(data) {
       const uri = el.dataset.uri;
       const type = el.dataset.type;
       if (!uri) return;
-      // Play based on type - artists need context_uri
+      if (isJamGuest()) {
+        showToast('Only the host can change tracks');
+        searchInput.value = '';
+        searchResults.classList.add('hidden');
+        return;
+      }
       if (type === 'artist') {
         send({ action: 'play', contextUri: uri });
       } else {
@@ -752,6 +757,10 @@ function renderQueue(data) {
       const uri = el.dataset.uri;
       const contextUri = el.dataset.contextUri;
       if (!uri) return;
+      if (isJamGuest()) {
+        showToast('Only the host can change tracks');
+        return;
+      }
       if (contextUri) {
         send({ action: 'play', contextUri, offset: { uri } });
       } else {
@@ -824,6 +833,10 @@ function renderPlaylists(data) {
     el.addEventListener('click', () => {
       const contextUri = el.dataset.contextUri;
       if (!contextUri) return;
+      if (isJamGuest()) {
+        showToast('Only the host can change playlists');
+        return;
+      }
       send({ action: 'play-playlist', contextUri, deviceId: lastDeviceId });
       els.iconPlay.classList.add('hidden');
       els.iconPause.classList.remove('hidden');
@@ -1286,7 +1299,7 @@ function handleMessage(msg) {
     case 'jam-sync-status': {
       const state = msg.data?.state;
       if (els.jamSyncStatus) {
-        const labels = { CONNECTING: 'Connecting...', SYNCING: 'Syncing...', SYNCED: 'Synced', DESYNCED: 'Re-syncing...', RECONNECTING: 'Reconnecting...' };
+        const labels = { CONNECTING: 'Connecting...', SYNCING: 'Syncing...', SYNCED: 'Synced', RECONNECTING: 'Reconnecting...' };
         els.jamSyncStatus.textContent = labels[state] || state || 'Synced';
       }
       break;

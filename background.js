@@ -58,6 +58,8 @@ async function closeOffscreenDocument() {
   jamActive = false;
   jamRole = null;
   jamApplying = false;
+  prevTrackUri = null;
+  prevIsPlaying = null;
 }
 
 // --- Port Management ---
@@ -141,30 +143,36 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       })();
       break;
     case 'jam-apply-state':
-      if (!jamActive || jamRole !== 'guest' || !msg.data) break;
+      if (!jamActive || jamRole !== 'guest' || !msg.data || jamApplying) break;
       jamApplying = true;
       (async () => {
         try {
+          if (Date.now() < rateLimitedUntil) return;
           const host = msg.data;
-          const localUri = lastState?.item?.uri;
+          const fresh = await spotify.getPlayerState().catch(() => null);
+          if (fresh) lastState = fresh;
+          const localUri = fresh?.item?.uri || lastState?.item?.uri;
+          const localProgress = fresh?.progress_ms ?? lastState?.progress_ms ?? 0;
+          const localPlaying = fresh?.is_playing ?? lastState?.is_playing ?? false;
+          const elapsed = Date.now() - (host.timestamp || Date.now());
 
           if (host.trackUri && host.trackUri !== localUri) {
+            const seekTo = host.positionMs + elapsed;
             await spotify.play(undefined, [host.trackUri]).catch(() => {});
-            if (host.positionMs > 1000) {
+            if (seekTo > 1000) {
               await new Promise(r => setTimeout(r, 400));
-              await spotify.seek(host.positionMs).catch(() => {});
+              await spotify.seek(seekTo).catch(() => {});
             }
           } else {
-            if (host.isPlaying && !lastState?.is_playing) {
+            if (host.isPlaying && !localPlaying) {
               await spotify.play().catch(() => {});
-            } else if (!host.isPlaying && lastState?.is_playing) {
+            } else if (!host.isPlaying && localPlaying) {
               await spotify.pause().catch(() => {});
             }
 
             if (host.isPlaying) {
-              const elapsed = Date.now() - (host.timestamp || Date.now());
               const expectedPos = host.positionMs + elapsed;
-              const drift = Math.abs((lastState?.progress_ms || 0) - expectedPos);
+              const drift = Math.abs(localProgress - expectedPos);
               if (drift > 2000) {
                 await spotify.seek(expectedPos).catch(() => {});
               }
@@ -217,6 +225,8 @@ async function afterHostAction() {
   const state = await spotify.getPlayerState().catch(() => null);
   if (state) {
     lastState = state;
+    prevTrackUri = state.item?.uri;
+    prevIsPlaying = state.is_playing;
     chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
   }
   const q = await spotify.getQueue().catch(() => null);
@@ -264,7 +274,12 @@ chrome.alarms.onAlarm.addListener(alarm => {
     poll();
   }
   if (alarm.name === ALARM_SLEEP) {
-    spotify.pause().catch(e => console.warn('[ShardTune BG] Sleep pause failed:', e.message));
+    if (jamRole === 'guest') {
+      chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type: 'pause' } }).catch(() => {});
+    } else {
+      spotify.pause().catch(e => console.warn('[ShardTune BG] Sleep pause failed:', e.message));
+      if (jamRole === 'host') afterHostAction().catch(() => {});
+    }
     broadcast({ type: 'sleep-fired' });
     storage.remove('sleepTimer');
   }
@@ -472,8 +487,9 @@ async function handlePortMessage(msg, port) {
         if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'transfer':
+        if (jamRole === 'guest') break;
         await spotify.transferPlayback(msg.deviceId);
-        schedulePoll(500);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
         break;
       case 'get-devices': {
         const devices = await spotify.getDevices();
@@ -801,6 +817,13 @@ chrome.commands.onCommand.addListener(async command => {
     const token = await spotify.getValidToken();
     if (!token) return;
 
+    if (jamRole === 'guest') {
+      const typeMap = { 'toggle-playback': lastState?.is_playing ? 'pause' : 'play', 'next-track': 'next', 'prev-track': 'previous' };
+      const type = typeMap[command];
+      if (type) chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type } }).catch(() => {});
+      return;
+    }
+
     switch (command) {
       case 'toggle-playback': {
         const fresh = await spotify.getPlayerState();
@@ -809,16 +832,16 @@ chrome.commands.onCommand.addListener(async command => {
         } else {
           await spotify.play();
         }
-        schedulePoll(300);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       }
       case 'next-track':
         await spotify.next();
-        schedulePoll(500);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
         break;
       case 'prev-track':
         await spotify.previous();
-        schedulePoll(500);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
         break;
     }
   } catch (e) { console.warn('[ShardTune BG] Command handler error:', e.message); }
