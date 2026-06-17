@@ -6,6 +6,7 @@ import * as notifs from './utils/notifications.js';
 import { checkForUpdates, getUpdateInfo } from './utils/update.js';
 
 const POLL_FAST = 5000;
+const POLL_JAM_GUEST = 15000;
 const POLL_SLOW_MINUTES = 1;
 const ALARM_POLL = 'shardtune-poll';
 const ALARM_SLEEP = 'shardtune-sleep';
@@ -128,6 +129,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       if (jamRole !== 'host' || !msg.data) break;
       (async () => {
         try {
+          const queueChange = ['next', 'previous', 'queue-add'].includes(msg.data.type);
           switch (msg.data.type) {
             case 'play': await spotify.play().catch(() => {}); break;
             case 'pause': await spotify.pause().catch(() => {}); break;
@@ -138,7 +140,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
               if (msg.data.uri) await spotify.addToQueue(msg.data.uri).catch(() => {});
               break;
           }
-          await afterHostAction();
+          await afterHostAction(queueChange);
         } catch {}
       })();
       break;
@@ -149,12 +151,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         try {
           if (Date.now() < rateLimitedUntil) return;
           const host = msg.data;
-          const fresh = await spotify.getPlayerState().catch(() => null);
-          if (fresh) lastState = fresh;
-          const localUri = fresh?.item?.uri || lastState?.item?.uri;
-          const localProgress = fresh?.progress_ms ?? lastState?.progress_ms ?? 0;
-          const localPlaying = fresh?.is_playing ?? lastState?.is_playing ?? false;
+          const localUri = lastState?.item?.uri;
+          const localPlaying = lastState?.is_playing ?? false;
           const elapsed = Date.now() - (host.timestamp || Date.now());
+          const pollAge = lastState?._pollTime ? (Date.now() - lastState._pollTime) : 0;
+          const localProgress = (lastState?.progress_ms ?? 0) + (localPlaying ? pollAge : 0);
 
           if (host.trackUri && host.trackUri !== localUri) {
             const seekTo = host.positionMs + elapsed;
@@ -178,7 +179,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
               }
             }
           }
-          schedulePoll(500);
+          schedulePoll(2000);
         } finally {
           jamApplying = false;
         }
@@ -220,25 +221,37 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
-async function afterHostAction() {
-  await new Promise(r => setTimeout(r, 300));
+let afterHostTimer = null;
+
+async function afterHostAction(fetchQueue = false) {
+  if (afterHostTimer) clearTimeout(afterHostTimer);
+  await new Promise((resolve) => {
+    afterHostTimer = setTimeout(() => { afterHostTimer = null; resolve(); }, 300);
+  });
   const state = await spotify.getPlayerState().catch(() => null);
   if (state) {
+    state._pollTime = Date.now();
+    const trackChanged = state.item?.uri !== prevTrackUri;
     lastState = state;
     prevTrackUri = state.item?.uri;
     prevIsPlaying = state.is_playing;
     chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
+    if (fetchQueue || trackChanged) {
+      const q = await spotify.getQueue().catch(() => null);
+      if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+    }
   }
-  const q = await spotify.getQueue().catch(() => null);
-  if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
-  schedulePoll(300);
+  schedulePoll(500);
 }
 
 // --- Polling ---
 
 function startFastPolling() {
-  if (pollInterval) return;
-  pollInterval = setInterval(poll, POLL_FAST);
+  const interval = (jamRole === 'guest') ? POLL_JAM_GUEST : POLL_FAST;
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+  pollInterval = setInterval(poll, interval);
   poll();
 }
 
@@ -309,6 +322,7 @@ async function doPoll() {
     if (!wasAuthenticated) broadcast({ type: 'auth-success' });
 
     const state = await spotify.getPlayerState();
+    if (state) state._pollTime = Date.now();
     lastState = state;
 
     if (jamRole === 'host' && state) {
@@ -450,7 +464,7 @@ async function handlePortMessage(msg, port) {
       case 'play':
         if (jamRole === 'guest' && !jamApplying) break;
         await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(300); }
         break;
       case 'pause':
         if (jamRole === 'guest' && !jamApplying) break;
@@ -460,12 +474,12 @@ async function handlePortMessage(msg, port) {
       case 'next':
         if (jamRole === 'guest') break;
         await spotify.next();
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(500); }
         break;
       case 'previous':
         if (jamRole === 'guest') break;
         await spotify.previous();
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(500); }
         break;
       case 'seek':
         if (jamRole === 'guest' && !jamApplying) break;
@@ -479,7 +493,7 @@ async function handlePortMessage(msg, port) {
       case 'shuffle':
         if (jamRole === 'guest') break;
         await spotify.setShuffle(msg.state);
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(300); }
         break;
       case 'repeat':
         if (jamRole === 'guest') break;
@@ -489,7 +503,7 @@ async function handlePortMessage(msg, port) {
       case 'transfer':
         if (jamRole === 'guest') break;
         await spotify.transferPlayback(msg.deviceId);
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(500); }
         break;
       case 'get-devices': {
         const devices = await spotify.getDevices();
@@ -674,7 +688,7 @@ async function handlePortMessage(msg, port) {
       case 'play-playlist': {
         if (jamRole === 'guest') break;
         await spotify.play(msg.deviceId, undefined, msg.contextUri);
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(300); }
         break;
       }
       case 'get-update-info': {
@@ -695,7 +709,7 @@ async function handlePortMessage(msg, port) {
         }
         await spotify.addToQueue(msg.uri, msg.deviceId);
         port.postMessage({ type: 'queue-added', data: { uri: msg.uri } });
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(300); }
         break;
       }
       case 'search': {
@@ -760,6 +774,7 @@ async function handlePortMessage(msg, port) {
         if (joinResult?.ok) {
           jamActive = true;
           jamRole = 'guest';
+          if (ports.size > 0) startFastPolling();
           broadcast({ type: 'jam-joined', data: { roomCode: joinResult.roomCode } });
         } else {
           broadcast({ type: 'jam-error', data: joinResult?.error || 'Failed to join session' });
@@ -771,6 +786,7 @@ async function handlePortMessage(msg, port) {
         jamActive = false;
         jamRole = null;
         await closeOffscreenDocument();
+        if (ports.size > 0) startFastPolling();
         broadcast({ type: 'jam-ended' });
         break;
       }
@@ -792,7 +808,7 @@ async function handlePortMessage(msg, port) {
       case 'jam-queue-add': {
         if (jamRole === 'host') {
           await spotify.addToQueue(msg.uri).catch(() => {});
-          await afterHostAction();
+          await afterHostAction(true);
         } else if (jamRole === 'guest') {
           chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type: 'queue-add', uri: msg.uri } }).catch(() => {});
         }
@@ -837,11 +853,11 @@ chrome.commands.onCommand.addListener(async command => {
       }
       case 'next-track':
         await spotify.next();
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(500); }
         break;
       case 'prev-track':
         await spotify.previous();
-        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
+        if (jamRole === 'host') { await afterHostAction(true); } else { schedulePoll(500); }
         break;
     }
   } catch (e) { console.warn('[ShardTune BG] Command handler error:', e.message); }
