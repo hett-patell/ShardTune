@@ -200,12 +200,8 @@ function applyGuestSnapshot(host) {
       const localProgress = lastState?.progress_ms ?? 0;
 
       if (host.trackUri && host.trackUri !== localUri) {
-        const seekTo = host.positionMs + elapsed;
-        await spotify.play(undefined, [host.trackUri]).catch(() => {});
-        if (seekTo > 1000) {
-          await new Promise(r => setTimeout(r, 400));
-          await spotify.seek(seekTo).catch(() => {});
-        }
+        const seekTo = Math.max(0, host.positionMs + elapsed);
+        await spotify.play(undefined, [host.trackUri], undefined, undefined, seekTo).catch(() => {});
       } else {
         if (host.isPlaying && !localPlaying) {
           await spotify.play().catch(() => {});

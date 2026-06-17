@@ -307,7 +307,7 @@ export function getQueue() {
   return apiFetch('/me/player/queue');
 }
 
-export function play(deviceId, uris, contextUri, offset) {
+export function play(deviceId, uris, contextUri, offset, positionMs) {
   const params = deviceId ? `?device_id=${deviceId}` : '';
   let body;
   if (contextUri) {
@@ -316,6 +316,7 @@ export function play(deviceId, uris, contextUri, offset) {
   } else if (uris?.length) {
     body = { uris };
   }
+  if (body && positionMs != null) body.position_ms = positionMs;
   return apiFetch(`/me/player/play${params}`, {
     method: 'PUT',
     ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
