@@ -4,6 +4,7 @@ import * as storage from './utils/storage.js';
 import * as buddylist from './utils/buddylist.js';
 import * as notifs from './utils/notifications.js';
 import { checkForUpdates, getUpdateInfo } from './utils/update.js';
+import * as syncEngine from './utils/sync-engine.js';
 
 const POLL_FAST = 5000;
 const POLL_SLOW_MINUTES = 1;
@@ -28,6 +29,7 @@ let jamActive = false;
 let jamRole = null;
 let jamApplying = false;
 let pendingSnapshot = null;
+let syncLoop = null;
 let prevTrackUri = null;
 let prevIsPlaying = null;
 let creatingOffscreen = null;
@@ -56,6 +58,7 @@ async function closeOffscreenDocument() {
     });
     if (existingContexts.length > 0) await chrome.offscreen.closeDocument();
   } catch {}
+  stopSyncLoop();
   jamActive = false;
   jamRole = null;
   jamApplying = false;
@@ -172,6 +175,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     case 'jam-sync-status':
       broadcast({ type: 'jam-sync-status', data: msg.data });
       break;
+    case 'jam-rtt-pong':
+      if (msg.data?.sentAt) {
+        const rtt = Date.now() - msg.data.sentAt;
+        syncEngine.recordRtt(rtt);
+      }
+      break;
     case 'jam-session-ended':
       jamActive = false;
       jamRole = null;
@@ -201,34 +210,35 @@ function applyGuestSnapshot(host) {
 
       const localUri = lastState?.item?.uri;
       const localPlaying = lastState?.is_playing ?? false;
-      const elapsed = Date.now() - (host.timestamp || Date.now());
-      const pollAge = lastState?._pollTime ? (Date.now() - lastState._pollTime) : 0;
-      const localProgress = (lastState?.progress_ms ?? 0) + (localPlaying ? pollAge : 0);
-      const sameTrack = !host.trackUri || host.trackUri === localUri;
-      const samePlayState = host.isPlaying === localPlaying;
 
-      if (!sameTrack) {
+      // 1. Track change (highest priority)
+      if (host.trackUri && host.trackUri !== localUri) {
+        syncEngine.enterTransitionLock();
+        const elapsed = Date.now() - (host.timestamp || Date.now());
         const seekTo = Math.max(0, host.positionMs + elapsed);
-        await spotify.play(undefined, [host.trackUri], undefined, undefined, seekTo).catch(() => {});
+        await spotify.play(undefined, [host.trackUri]).catch(() => {});
+        if (seekTo > 1000) {
+          await new Promise(r => setTimeout(r, 400));
+          await spotify.seek(seekTo).catch(() => {});
+        }
+        syncEngine.updateHostRef(host);
         guestCooldownUntil = Date.now() + 3000;
         schedulePoll(1000);
-      } else if (!samePlayState) {
-        if (host.isPlaying) {
-          await spotify.play().catch(() => {});
-        } else {
-          await spotify.pause().catch(() => {});
-        }
+        return;
+      }
+
+      // 2. Play/pause consistency
+      if (host.isPlaying !== localPlaying) {
+        if (host.isPlaying) await spotify.play().catch(() => {});
+        else await spotify.pause().catch(() => {});
+        syncEngine.updateHostRef(host);
         guestCooldownUntil = Date.now() + 1500;
         schedulePoll(1000);
-      } else if (host.isPlaying) {
-        const expectedPos = host.positionMs + elapsed;
-        const drift = Math.abs(localProgress - expectedPos);
-        if (drift > 5000) {
-          await spotify.seek(expectedPos).catch(() => {});
-          guestCooldownUntil = Date.now() + 2000;
-          schedulePoll(1000);
-        }
+        return;
       }
+
+      // 3. Store hostRef for the prediction loop
+      syncEngine.updateHostRef(host);
     } finally {
       jamApplying = false;
       if (pendingSnapshot) {
@@ -238,6 +248,27 @@ function applyGuestSnapshot(host) {
       }
     }
   })();
+}
+
+// Prediction loop — runs every 500ms when jam is active as guest
+function startSyncLoop() {
+  if (syncLoop) return;
+  syncLoop = setInterval(async () => {
+    if (jamRole !== 'guest' || !syncEngine.hasHostRef()) return;
+    if (Date.now() < rateLimitedUntil) return;
+    if (jamApplying) return;
+
+    const correction = syncEngine.tick(lastState?.progress_ms || 0);
+    if (!correction) return;
+
+    await spotify.seek(correction.seekTo).catch(() => {});
+    schedulePoll(1000);
+  }, 500);
+}
+
+function stopSyncLoop() {
+  if (syncLoop) { clearInterval(syncLoop); syncLoop = null; }
+  syncEngine.reset();
 }
 
 let afterHostTimer = null;
@@ -793,6 +824,8 @@ async function handlePortMessage(msg, port) {
         if (joinResult?.ok) {
           jamActive = true;
           jamRole = 'guest';
+          syncEngine.loadManualOffset();
+          startSyncLoop();
           if (ports.size > 0) startFastPolling();
           broadcast({ type: 'jam-joined', data: { roomCode: joinResult.roomCode } });
         } else {
@@ -802,6 +835,7 @@ async function handlePortMessage(msg, port) {
       }
       case 'jam-leave': {
         await chrome.runtime.sendMessage({ action: 'jam-leave' }).catch(() => {});
+        stopSyncLoop();
         jamActive = false;
         jamRole = null;
         await closeOffscreenDocument();
@@ -831,6 +865,14 @@ async function handlePortMessage(msg, port) {
         } else if (jamRole === 'guest') {
           chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type: 'queue-add', uri: msg.uri } }).catch(() => {});
         }
+        break;
+      }
+      case 'jam-set-offset': {
+        syncEngine.saveManualOffset(msg.data?.offset || 0);
+        break;
+      }
+      case 'jam-get-sync-status': {
+        port.postMessage({ type: 'jam-sync-detail', data: syncEngine.getSyncStatus() });
         break;
       }
       default:

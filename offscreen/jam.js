@@ -148,6 +148,12 @@ function initRoom() {
     } else if (data.type === 'PONG' && role === 'host') {
       const peer = peerNames.get(peerId);
       if (peer) peer.lastSeen = Date.now();
+    } else if (data.type === 'RTT_PING' && role === 'host') {
+      // Host echoes back the guest's timestamp
+      heartbeatAction.send({ type: 'RTT_PONG', ts: data.ts });
+    } else if (data.type === 'RTT_PONG' && role === 'guest') {
+      // Guest calculates RTT and sends to background
+      sendToBg({ action: 'jam-rtt-pong', data: { sentAt: data.ts, receivedAt: Date.now() } });
     }
   };
 }
@@ -266,26 +272,35 @@ function sendRequest(type, extra = {}) {
 
 // --- Heartbeat ---
 
+let rttInterval = null;
+
 function startHeartbeat() {
   stopHeartbeat();
-  if (role !== 'host') return;
-  heartbeatInterval = setInterval(() => {
-    heartbeatAction.send({ type: 'PING' });
-    const now = Date.now();
-    for (const [peerId, info] of peerNames) {
-      if (!info.lastSeen) continue;
-      const elapsed = now - info.lastSeen;
-      if (elapsed > HEARTBEAT_DEAD) {
-        peerNames.delete(peerId);
-        broadcastPeerList();
-        sendToBg({ action: 'jam-peer-disconnected', peerId, name: info.name });
+  if (role === 'host') {
+    heartbeatInterval = setInterval(() => {
+      heartbeatAction.send({ type: 'PING' });
+      const now = Date.now();
+      for (const [peerId, info] of peerNames) {
+        if (!info.lastSeen) continue;
+        const elapsed = now - info.lastSeen;
+        if (elapsed > HEARTBEAT_DEAD) {
+          peerNames.delete(peerId);
+          broadcastPeerList();
+          sendToBg({ action: 'jam-peer-disconnected', peerId, name: info.name });
+        }
       }
-    }
-  }, HEARTBEAT_INTERVAL);
+    }, HEARTBEAT_INTERVAL);
+  } else if (role === 'guest') {
+    // Guest sends RTT pings every 4s for latency measurement
+    rttInterval = setInterval(() => {
+      if (heartbeatAction) heartbeatAction.send({ type: 'RTT_PING', ts: Date.now() });
+    }, HEARTBEAT_INTERVAL);
+  }
 }
 
 function stopHeartbeat() {
   if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  if (rttInterval) { clearInterval(rttInterval); rttInterval = null; }
 }
 
 // --- Reconnect ---
@@ -348,6 +363,7 @@ function handleJoin(code, name) {
   guestState = 'CONNECTING';
 
   initRoom();
+  startHeartbeat();
   setGuestState('CONNECTING');
   return { ok: true, roomCode };
 }

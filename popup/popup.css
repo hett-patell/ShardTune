@@ -1908,13 +1908,74 @@ body {
 }
 
 .jam-end-btn:hover {
-  border-color: #e53935;
-  color: #e53935;
+  border-color: var(--destructive);
+  color: var(--destructive);
 }
 
 .jam-connecting-dots {
   display: flex;
   justify-content: center;
   margin-bottom: 12px;
+}
+
+/* Jam Sync Offset Slider */
+
+.jam-offset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.jam-offset-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--elevated);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.jam-offset-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--green);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 150ms var(--ease);
+}
+
+.jam-offset-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.jam-offset-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--green);
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+
+.jam-offset-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--fg-faint);
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.jam-offset-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
+  text-align: center;
+  margin-top: 4px;
 }
 

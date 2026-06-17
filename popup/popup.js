@@ -131,6 +131,8 @@ const els = {
   jamEndBtn: $('jam-end-btn'),
   jamLeaveBtn: $('jam-leave-btn'),
   jamSyncStatus: $('jam-sync-status'),
+  jamOffsetSlider: $('jam-offset-slider'),
+  jamOffsetValue: $('jam-offset-value'),
 };
 
 let currentState = null;
@@ -1304,6 +1306,14 @@ function handleMessage(msg) {
       }
       break;
     }
+    case 'jam-sync-detail': {
+      const d = msg.data;
+      if (d && els.jamSyncStatus) {
+        const latencyStr = d.latency ? ` (${d.latency}ms)` : '';
+        els.jamSyncStatus.textContent = `${els.jamSyncStatus.textContent}${latencyStr}`;
+      }
+      break;
+    }
     case 'jam-state':
       if (msg.data?.active) {
         jamState = msg.data;
@@ -1371,6 +1381,13 @@ els.jamLeaveBtn.addEventListener('click', () => send({ action: 'jam-leave' }));
 els.jamRoomCode?.addEventListener('click', () => {
   navigator.clipboard.writeText(els.jamRoomCode.textContent);
   showToast('Room code copied');
+});
+
+// Manual sync offset slider
+els.jamOffsetSlider?.addEventListener('input', () => {
+  const ms = parseInt(els.jamOffsetSlider.value);
+  els.jamOffsetValue.textContent = ms === 0 ? 'Auto' : `${ms > 0 ? '+' : ''}${(ms/1000).toFixed(1)}s`;
+  send({ action: 'jam-set-offset', data: { offset: ms } });
 });
 
 function showJamState(state) {
