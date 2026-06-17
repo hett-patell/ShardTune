@@ -154,7 +154,7 @@ function showApiWarning(errors) {
     b.className = 'api-warning';
     document.querySelector('.bento').before(b);
   }
-  b.innerHTML = '<strong>Some Spotify API calls returned 403</strong>Try logging out and reconnecting from the popup.';
+  b.innerHTML = '<strong>Some Spotify API calls returned 403</strong><br>Try logging out and reconnecting from the popup.';
 }
 
 // === Hero ===
@@ -318,9 +318,8 @@ function renderHeatmap(hours) {
   }
 
   const max = Math.max(...hours, 1);
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  
-  // Create a single row showing aggregate hours
+
+  // Single row showing aggregate hours
   const cellsHtml = hours.map((val, i) => {
     const intensity = val > 0 ? 0.15 + (val / max) * 0.85 : 0.04;
     const h = String(i).padStart(2, '0');
@@ -542,6 +541,7 @@ function renderLog(history) {
 
 function renderFriends(data) {
   const c = $('friends-list');
+  if (!data) return;
 
   if (data.error) {
     c.innerHTML = `<div class="friends-error">${esc(data.error)}</div>`;
@@ -623,8 +623,9 @@ function calculateVibeScore(my, friend) {
     }
   }
 
-  // Factor 3: Time alignment (15%)
-  const hourDiff = Math.abs(my.hour - friend.hour);
+  // Factor 3: Time alignment (15%) — circular distance for hour wrap-around
+  const rawDiff = Math.abs(my.hour - friend.hour);
+  const hourDiff = Math.min(rawDiff, 24 - rawDiff);
   const timeScore = Math.max(0, 100 - hourDiff * 20);
 
   return Math.round(energyScore * 0.5 + artistScore * 0.35 + timeScore * 0.15);
@@ -649,6 +650,7 @@ function scoreClass(s) {
 
 function renderVibeSync(data) {
   const c = $('vibe-sync');
+  if (!data) return;
 
   if (data.error) {
     c.innerHTML = `<div class="friends-error">${esc(data.error)}</div>`;
@@ -1154,9 +1156,10 @@ $('export-json-btn').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.download = `shardtune-${new Date().toISOString().split('T')[0]}.json`;
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 // === Helpers ===

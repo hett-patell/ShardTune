@@ -186,6 +186,7 @@ els.openSpotifyDev.addEventListener('click', () => {
 });
 
 send({ action: 'check-client-id' });
+els.sAboutVer.textContent = `v${chrome.runtime.getManifest().version}`;
 
 els.saveIdBtn.addEventListener('click', () => {
   const id = els.clientIdInput.value.trim();
@@ -324,6 +325,8 @@ function showUpdateStatus(updateInfo) {
 const searchInput = $('search-input');
 const searchResults = $('search-results');
 let searchTimeout = null;
+let searchSeq = 0;
+let lastRenderedSeq = 0;
 
 searchInput.addEventListener('input', () => {
   clearTimeout(searchTimeout);
@@ -333,7 +336,8 @@ searchInput.addEventListener('input', () => {
     return;
   }
   searchTimeout = setTimeout(() => {
-    send({ action: 'search', query, types: ['track', 'artist'], limit: 8 });
+    searchSeq++;
+    send({ action: 'search', query, types: ['track', 'artist'], limit: 8, seq: searchSeq });
   }, 300);
 });
 
@@ -386,7 +390,7 @@ function renderSearchResults(data) {
         </div>
         <div class="search-result-actions">
           <button class="search-action-btn" data-action="queue" data-uri="${esc(t.uri)}" title="Add to queue">
-            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2v12M2 8h12"/></svg>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
           </button>
         </div>
       </div>`;
@@ -408,6 +412,13 @@ function renderSearchResults(data) {
         send({ action: 'play', contextUri: uri });
       } else {
         send({ action: 'play', uris: [uri] });
+        const trackId = uri.split(':').pop();
+        if (trackId) {
+          currentTrackId = trackId;
+          isTrackSaved = false;
+          updateLikeButton();
+          checkIfTrackSaved(trackId);
+        }
       }
       searchInput.value = '';
       searchResults.classList.add('hidden');
@@ -483,23 +494,27 @@ function showAuth() {
   stopProgressTimer();
 }
 
+let playerDataRequested = false;
+
 function showPlayer() {
   if (!authenticated) return;
   if (!els.settingsScreen.classList.contains('hidden')) return;
   els.authScreen.classList.add('hidden');
   els.playerScreen.classList.remove('hidden');
   updateGreeting();
-  // Stagger requests to avoid rate limits
-  send({ action: 'get-queue' });
-  setTimeout(() => send({ action: 'get-sleep' }), 200);
-  setTimeout(() => send({ action: 'get-profile' }), 400);
-  setTimeout(() => send({ action: 'get-playlists' }), 600);
+  if (!playerDataRequested) {
+    playerDataRequested = true;
+    send({ action: 'get-queue' });
+    setTimeout(() => send({ action: 'get-sleep' }), 200);
+    setTimeout(() => send({ action: 'get-profile' }), 400);
+    setTimeout(() => send({ action: 'get-playlists' }), 600);
+  }
 }
 
 function showAuthError(message) {
   els.authBtn.textContent = 'Connect Spotify';
   els.authBtn.disabled = false;
-  els.authError.textContent = message;
+  els.authError.textContent = typeof message === 'string' ? message : (message?.message || 'Authentication failed');
   els.authError.classList.remove('hidden');
 }
 
@@ -570,13 +585,14 @@ function renderState(state, availableDevices) {
   currentState = state;
   currentTrackUri = track.external_urls?.spotify || null;
   
-  // Check if track changed and update like button
+  // Check if track changed and update like button + queue
   if (track.id !== currentTrackId) {
     currentTrackId = track.id;
     isTrackSaved = false;
     els.likeBtn.classList.remove('liked');
     els.likeBtn.classList.remove('hidden');
     checkIfTrackSaved(track.id);
+    send({ action: 'get-queue' });
   }
 
   els.trackName.textContent = track.name || 'Unknown';
@@ -639,6 +655,7 @@ function renderState(state, availableDevices) {
   // Spotify's queue API can't expose true shuffle order — flag it as approximate.
   els.queueLabel.textContent = shuffled ? 'Up Next · approximate' : 'Up Next';
   els.repeatBtn.classList.toggle('active', state.repeat_state !== 'off');
+  els.repeatBtn.classList.toggle('repeat-one', state.repeat_state === 'track');
   els.repeatBtn.title = `Repeat: ${state.repeat_state || 'off'}`;
 
   updateWaveform(state);
@@ -732,6 +749,13 @@ function renderQueue(data) {
         els.timeCurrent.textContent = '0:00';
         els.timeTotal.textContent = fmt(track.durationMs);
         currentState = { is_playing: true, progress_ms: 0, item: { duration_ms: track.durationMs } };
+        const queueTrackId = el.dataset.id;
+        if (queueTrackId) {
+          currentTrackId = queueTrackId;
+          isTrackSaved = false;
+          updateLikeButton();
+          checkIfTrackSaved(queueTrackId);
+        }
       } catch {}
       els.iconPlay.classList.add('hidden');
       els.iconPause.classList.remove('hidden');
@@ -843,9 +867,11 @@ els.repeatBtn.addEventListener('click', () => {
   const modes = ['off', 'context', 'track'];
   const current = currentState?.repeat_state || 'off';
   const nextIdx = (modes.indexOf(current) + 1) % modes.length;
-  send({ action: 'repeat', mode: modes[nextIdx] });
-  els.repeatBtn.classList.toggle('active', modes[nextIdx] !== 'off');
-  els.repeatBtn.title = `Repeat: ${modes[nextIdx]}`;
+  const next = modes[nextIdx];
+  send({ action: 'repeat', mode: next });
+  els.repeatBtn.classList.toggle('active', next !== 'off');
+  els.repeatBtn.classList.toggle('repeat-one', next === 'track');
+  els.repeatBtn.title = `Repeat: ${next}`;
 });
 
 // --- Seek ---
@@ -853,7 +879,7 @@ els.repeatBtn.addEventListener('click', () => {
 els.progressTrack.addEventListener('click', e => {
   if (!currentState?.item) return;
   const rect = els.progressTrack.getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   const posMs = Math.round(pct * currentState.item.duration_ms);
   send({ action: 'seek', positionMs: posMs });
   currentState.progress_ms = posMs;
@@ -1062,7 +1088,7 @@ function handleMessage(msg) {
       els.authBtn.disabled = false;
       break;
     case 'sleep-set':
-      sleepExpiresAt = msg.data.expiresAt;
+      sleepExpiresAt = msg.data?.expiresAt;
       updateSleepBadge();
       if (sleepInterval) clearInterval(sleepInterval);
       sleepInterval = setInterval(updateSleepBadge, 10000);
@@ -1073,7 +1099,7 @@ function handleMessage(msg) {
       updateSleepBadge();
       break;
     case 'sleep-status':
-      if (msg.data.expiresAt && msg.data.expiresAt > Date.now()) {
+      if (msg.data?.expiresAt && msg.data.expiresAt > Date.now()) {
         sleepExpiresAt = msg.data.expiresAt;
         updateSleepBadge();
         if (sleepInterval) clearInterval(sleepInterval);
@@ -1088,10 +1114,12 @@ function handleMessage(msg) {
       }
       break;
     case 'saved-status':
-      if (msg.data.trackId === currentTrackId) {
+      if (msg.data?.trackId === currentTrackId) {
         isTrackSaved = msg.data.saved;
         updateLikeButton();
-        showToast(isTrackSaved ? 'Saved to library' : 'Removed from library');
+        if (msg.data.toggled) {
+          showToast(isTrackSaved ? 'Saved to library' : 'Removed from library');
+        }
       }
       break;
     case 'playlists':
@@ -1101,19 +1129,25 @@ function handleMessage(msg) {
       showUpdateStatus(msg.data);
       break;
     case 'search-results':
-      renderSearchResults(msg.data);
+      if (!msg.seq || msg.seq >= lastRenderedSeq) {
+        lastRenderedSeq = msg.seq || 0;
+        renderSearchResults(msg.data);
+      }
       break;
     case 'queue-added':
       showToast('Added to queue');
+      setTimeout(() => send({ action: 'get-queue' }), 500);
       break;
-    case 'error':
-      console.error('ShardTune:', msg.data);
-      if (msg.data?.includes('Rate limited')) {
+    case 'error': {
+      const errMsg = typeof msg.data === 'string' ? msg.data : (msg.data?.message || 'Something went wrong');
+      console.error('ShardTune:', errMsg);
+      if (errMsg.includes('Rate limited')) {
         showToast('Rate limited by Spotify. Please wait.');
       } else {
-        showToast(msg.data || 'Something went wrong');
+        showToast(errMsg);
       }
       break;
+    }
   }
 }
 

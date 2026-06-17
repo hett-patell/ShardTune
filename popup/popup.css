@@ -469,15 +469,15 @@ body {
 }
 
 .search-action-btn {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   cursor: pointer;
   transition: all 150ms var(--ease);
 }
@@ -485,11 +485,12 @@ body {
 .search-action-btn:hover {
   border-color: var(--green);
   color: var(--green);
+  background: rgba(29,185,84,0.08);
 }
 
 .search-action-btn svg {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 /* greeting corner brackets removed — Clean Swiss */
@@ -641,19 +642,20 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   background: none;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   cursor: pointer;
   transition: all 150ms var(--ease);
 }
 
 .copy-btn:hover {
-  border-color: var(--border);
-  color: var(--fg-muted);
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(29,185,84,0.08);
 }
 
 .copy-btn.copied {
@@ -661,37 +663,39 @@ body {
   color: var(--green);
 }
 
-.copy-btn svg { width: 12px; height: 12px; }
+.copy-btn svg { width: 14px; height: 14px; }
 
 .like-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   background: none;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   cursor: pointer;
   transition: all 150ms var(--ease);
 }
 
 .like-btn:hover {
-  border-color: var(--border);
-  color: var(--fg-muted);
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(29,185,84,0.08);
 }
 
 .like-btn.liked {
   border-color: var(--green);
   color: var(--green);
+  background: rgba(29,185,84,0.1);
 }
 
 .like-btn.liked svg {
   fill: var(--green);
 }
 
-.like-btn svg { width: 12px; height: 12px; }
+.like-btn svg { width: 14px; height: 14px; }
 
 /* ============================================
    WAVEFORM VISUALIZER
@@ -844,6 +848,17 @@ body {
 }
 
 .t-btn.subtle.active { color: var(--green); }
+.t-btn.subtle.repeat-one { position: relative; }
+.t-btn.subtle.repeat-one::after {
+  content: '1';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 7px;
+  font-weight: 700;
+  color: var(--green);
+  line-height: 1;
+}
 .t-btn.subtle:hover { color: var(--fg-muted); }
 
 /* ============================================

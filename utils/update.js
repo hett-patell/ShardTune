@@ -24,10 +24,12 @@ async function getLatestRelease() {
 function compareVersions(local, remote) {
   const localParts = local.split('.').map(Number);
   const remoteParts = remote.split('.').map(Number);
-  
+
   for (let i = 0; i < 3; i++) {
-    if (remoteParts[i] > localParts[i]) return 1;  // remote is newer
-    if (remoteParts[i] < localParts[i]) return -1; // local is newer
+    const lp = localParts[i] || 0;
+    const rp = remoteParts[i] || 0;
+    if (rp > lp) return 1;  // remote is newer
+    if (rp < lp) return -1; // local is newer
   }
   return 0; // same version
 }

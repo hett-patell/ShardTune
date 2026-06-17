@@ -218,8 +218,15 @@ export async function getStreak() {
 
 // --- Peak Hours ---
 
+function validPeakHours(arr) {
+  return Array.isArray(arr) && arr.length === 24 && arr.every(v => typeof v === 'number' && !isNaN(v));
+}
+
 export async function getPeakHours() {
-  if (!peakHoursCache) peakHoursCache = (await storage.get('peakHours')) || new Array(24).fill(0);
+  if (!peakHoursCache) {
+    const stored = await storage.get('peakHours');
+    peakHoursCache = validPeakHours(stored) ? stored : new Array(24).fill(0);
+  }
   return peakHoursCache;
 }
 
@@ -236,8 +243,14 @@ export async function getMusicMemory() {
 
 // Combined write — avoids two separate storage.set calls per track change.
 export async function updateTrackAnalytics(energy) {
-  if (!peakHoursCache) peakHoursCache = (await storage.get('peakHours')) || new Array(24).fill(0);
-  if (!musicMemoryCache) musicMemoryCache = (await storage.get('musicMemory')) || emptyMemory();
+  if (!peakHoursCache) {
+    const stored = await storage.get('peakHours');
+    peakHoursCache = validPeakHours(stored) ? stored : new Array(24).fill(0);
+  }
+  if (!musicMemoryCache) {
+    const stored = await storage.get('musicMemory');
+    musicMemoryCache = (Array.isArray(stored) && stored.length === 168) ? stored : emptyMemory();
+  }
 
   const now = new Date();
   peakHoursCache[now.getHours()]++;

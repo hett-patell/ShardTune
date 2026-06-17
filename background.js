@@ -171,10 +171,10 @@ async function doPoll() {
     const streak = await analytics.getStreak();
     broadcast({ type: 'analytics', data: { session, streak } });
 
-    // Auto-downshift to slow polling when paused for extended period
-    if (state && !state.is_playing) {
+    // Auto-downshift to slow polling when paused or no device active
+    if (!state || !state.is_playing) {
       pausedTicks++;
-      if (pausedTicks > 6) { // ~30 seconds of paused
+      if (pausedTicks > 6) { // ~30 seconds idle
         stopFastPolling();
         startSlowPolling();
       }
@@ -196,6 +196,8 @@ async function doPoll() {
       rateLimitedUntil = Date.now() + err.retryAfterMs;
       // Use alarm instead of setTimeout (setTimeout dies with SW eviction)
       chrome.alarms.create('shardtune-rate-limit', { delayInMinutes: Math.max(err.retryAfterMs / 60000, 0.1) });
+    } else {
+      console.warn('[ShardTune BG] Poll error:', err.message);
     }
   }
 }
@@ -459,7 +461,7 @@ async function handlePortMessage(msg, port) {
         } else {
           await spotify.saveTrack(msg.trackId);
         }
-        broadcast({ type: 'saved-status', data: { trackId: msg.trackId, saved: !msg.saved } });
+        broadcast({ type: 'saved-status', data: { trackId: msg.trackId, saved: !msg.saved, toggled: true } });
         break;
       }
       case 'get-playlists': {
@@ -493,7 +495,7 @@ async function handlePortMessage(msg, port) {
       }
       case 'search': {
         const results = await spotify.search(msg.query, msg.types, msg.limit);
-        port.postMessage({ type: 'search-results', data: results });
+        port.postMessage({ type: 'search-results', data: results, seq: msg.seq });
         break;
       }
       case 'get-audio-features':
@@ -511,11 +513,18 @@ async function handlePortMessage(msg, port) {
         await storage.remove('streak');
         analytics.resetSession();
         notifs.resetSession();
+        lastHistory = null;
+        lastHistoryTime = 0;
         break;
       case 'logout':
         await analytics.flush();
         await spotify.logout();
         lastState = null;
+        lastHistory = null;
+        lastHistoryTime = 0;
+        lastPlaylists = null;
+        friendsCache = null;
+        friendsCacheTime = 0;
         isAuthenticated = false;
         analytics.resetSession();
         analytics.invalidateCaches();
@@ -540,14 +549,16 @@ chrome.commands.onCommand.addListener(async command => {
     if (!token) return;
 
     switch (command) {
-      case 'toggle-playback':
-        if (lastState?.is_playing) {
+      case 'toggle-playback': {
+        const fresh = await spotify.getPlayerState();
+        if (fresh?.is_playing) {
           await spotify.pause();
         } else {
           await spotify.play();
         }
         schedulePoll(300);
         break;
+      }
       case 'next-track':
         await spotify.next();
         schedulePoll(500);

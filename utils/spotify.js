@@ -3,11 +3,13 @@ import * as storage from './storage.js';
 const SCOPES = [
   'user-read-playback-state',     // player state, devices, queue
   'user-modify-playback-state',   // transport controls
-  'user-read-currently-playing',  // now-playing
+  'user-read-currently-playing',  // now-playing + queue
   'user-read-recently-played',    // history / energy curve
   'user-top-read',                // top artists & tracks
-  'user-library-read',            // liked-song detection (/me/tracks/contains)
-  'user-library-modify',          // save/unsave tracks
+  'user-library-read',            // /me/library/contains
+  'user-library-modify',          // /me/library save/remove
+  'user-follow-read',             // unified library contains
+  'user-follow-modify',           // unified library save/remove
   'playlist-read-private',        // read user's private playlists
   'playlist-read-collaborative'   // read collaborative playlists
 ].join(' ');
@@ -375,23 +377,18 @@ export function getTopTracks(timeRange = 'short_term', limit = 10) {
 // 2024-11-27) and intentionally not used — energy comes from a local proxy.
 
 export async function checkSavedTracks(ids) {
-  return apiFetch(`/me/tracks/contains?ids=${ids.slice(0, 50).join(',')}`);
+  const uris = ids.slice(0, 40).map(id => `spotify:track:${id}`).join(',');
+  return apiFetch(`/me/library/contains?uris=${encodeURIComponent(uris)}`);
 }
 
 export async function saveTrack(id) {
-  return apiFetch('/me/tracks', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids: [id] })
-  });
+  const uris = encodeURIComponent(`spotify:track:${id}`);
+  return apiFetch(`/me/library?uris=${uris}`, { method: 'PUT' });
 }
 
 export async function removeTrack(id) {
-  return apiFetch('/me/tracks', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids: [id] })
-  });
+  const uris = encodeURIComponent(`spotify:track:${id}`);
+  return apiFetch(`/me/library?uris=${uris}`, { method: 'DELETE' });
 }
 
 export async function getTracks(ids) {
@@ -410,8 +407,9 @@ export async function getPlaylistTracks(playlistId, limit = 100) {
 // Queue
 
 export async function addToQueue(uri, deviceId) {
-  const params = deviceId ? `?device_id=${deviceId}` : '';
-  return apiFetch(`/me/player/queue${params}`, { method: 'POST' });
+  const params = new URLSearchParams({ uri });
+  if (deviceId) params.set('device_id', deviceId);
+  return apiFetch(`/me/player/queue?${params}`, { method: 'POST' });
 }
 
 // Search
