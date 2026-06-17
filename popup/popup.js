@@ -116,7 +116,8 @@ const els = {
   updateStatus: $('update-status'),
   sAboutVer: $('s-about-ver'),
   jamBtn: $('jam-btn'),
-  jamPanel: $('jam-panel'),
+  jamScreen: $('jam-screen'),
+  jamBack: $('jam-back'),
   jamIdle: $('jam-idle'),
   jamHost: $('jam-host'),
   jamGuest: $('jam-guest'),
@@ -510,6 +511,7 @@ function showAuth() {
   els.authScreen.classList.remove('hidden');
   els.playerScreen.classList.add('hidden');
   els.settingsScreen.classList.add('hidden');
+  els.jamScreen.classList.add('hidden');
   authenticated = false;
   stopProgressTimer();
 }
@@ -518,7 +520,7 @@ let playerDataRequested = false;
 
 function showPlayer() {
   if (!authenticated) return;
-  if (!els.settingsScreen.classList.contains('hidden')) return;
+  if (!els.settingsScreen.classList.contains('hidden') || !els.jamScreen.classList.contains('hidden')) return;
   els.authScreen.classList.add('hidden');
   els.playerScreen.classList.remove('hidden');
   updateGreeting();
@@ -1266,7 +1268,7 @@ function handleMessage(msg) {
         } else {
           renderJamPeers(msg.data.peers || [], els.jamGuestPeerList);
         }
-        els.jamPanel.classList.remove('hidden');
+        els.jamScreen.classList.remove('hidden');
       } else {
         jamState = null;
         showJamState('idle');
@@ -1283,10 +1285,14 @@ function handleMessage(msg) {
 // --- Jam ---
 
 els.jamBtn.addEventListener('click', () => {
-  els.jamPanel.classList.toggle('hidden');
-  if (!els.jamPanel.classList.contains('hidden')) {
-    send({ action: 'jam-get-state' });
-  }
+  els.playerScreen.classList.add('hidden');
+  els.jamScreen.classList.remove('hidden');
+  send({ action: 'jam-get-state' });
+});
+
+els.jamBack.addEventListener('click', () => {
+  els.jamScreen.classList.add('hidden');
+  els.playerScreen.classList.remove('hidden');
 });
 
 els.jamCreateBtn.addEventListener('click', () => {

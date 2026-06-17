@@ -1665,43 +1665,76 @@ body {
   background: rgba(29,185,84,0.1);
 }
 
-.jam-panel {
-  padding: 14px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+/* --- Jam Screen --- */
+
+#jam-screen:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
-.jam-title {
+.jam-scroll {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.jam-scroll::-webkit-scrollbar { width: 4px; }
+.jam-scroll::-webkit-scrollbar-track { background: transparent; }
+.jam-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+.jam-hero {
+  text-align: center;
+  padding: 24px 0 20px;
+}
+
+.jam-hero-icon {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+
+.jam-hero-title {
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--fg);
   margin-bottom: 4px;
 }
 
-.jam-desc {
-  font-size: 10px;
+.jam-hero-desc {
+  font-size: 11px;
   color: var(--fg-faint);
-  margin-bottom: 12px;
+}
+
+.jam-section {
+  margin-bottom: 14px;
 }
 
 .jam-action-btn {
   width: 100%;
-  height: 32px;
+  height: 36px;
   background: var(--green);
   border: none;
   border-radius: 2px;
   color: #000;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 150ms var(--ease);
-  margin-bottom: 8px;
+  transition: background 150ms var(--ease);
 }
 
 .jam-action-btn:hover { background: var(--green-dim); }
+
+.jam-or {
+  text-align: center;
+  font-size: 10px;
+  color: var(--fg-faint);
+  margin: 4px 0 14px;
+}
 
 .jam-join-row {
   display: flex;
@@ -1710,14 +1743,14 @@ body {
 
 .jam-code-input {
   flex: 1;
-  height: 32px;
+  height: 36px;
   padding: 0 10px;
   background: var(--elevated);
   border: 1px solid var(--border);
   border-radius: 2px;
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -1736,14 +1769,14 @@ body {
 }
 
 .jam-join-btn {
-  height: 32px;
-  padding: 0 16px;
+  height: 36px;
+  padding: 0 18px;
   background: var(--elevated);
   border: 1px solid var(--border);
   border-radius: 2px;
   color: var(--fg-muted);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms var(--ease);
@@ -1754,25 +1787,67 @@ body {
   color: var(--green);
 }
 
+.jam-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.jam-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+  box-shadow: 0 0 8px rgba(29,185,84,0.4);
+}
+
+.jam-status-dot.connecting {
+  animation: pulse-dot 1s ease infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.jam-code-section {
+  text-align: center;
+  padding: 16px 0;
+  background: var(--elevated);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.jam-code-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 6px;
+}
+
 .jam-room-code {
   font-family: var(--font-mono);
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--green);
   letter-spacing: 0.2em;
-  text-align: center;
-  padding: 8px 0;
   cursor: pointer;
   transition: opacity 150ms var(--ease);
 }
 
-.jam-room-code:hover { opacity: 0.8; }
+.jam-room-code:hover { opacity: 0.7; }
 
-.jam-label {
+.jam-code-hint {
   font-size: 9px;
   color: var(--fg-faint);
-  text-align: center;
-  margin-bottom: 12px;
+  margin-top: 4px;
 }
 
 .jam-peers-label {
@@ -1782,24 +1857,24 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg-faint);
-  margin-bottom: 6px;
-  margin-top: 8px;
+  margin-bottom: 8px;
 }
 
 .jam-peer-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 2px;
 }
 
 .jam-peer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 6px 8px;
   font-size: 11px;
   color: var(--fg-muted);
+  background: var(--elevated);
+  border-radius: 2px;
 }
 
 .jam-peer-dot {
@@ -1816,13 +1891,13 @@ body {
 
 .jam-end-btn {
   width: 100%;
-  height: 28px;
+  height: 32px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 2px;
   color: var(--fg-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 150ms var(--ease);
 }
@@ -1832,11 +1907,9 @@ body {
   color: #e53935;
 }
 
-.jam-sync-status {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--green);
-  text-align: center;
-  margin-bottom: 8px;
+.jam-connecting-dots {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
 }
 

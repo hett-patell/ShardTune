@@ -135,10 +135,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       broadcast({ type: 'jam-peers', data: msg.data });
       break;
     case 'jam-peer-connected':
-      broadcast({ type: 'jam-peer-joined', data: { name: msg.name } });
+      broadcast({ type: 'jam-peer-joined', data: { name: msg.name || msg.peerId } });
       break;
     case 'jam-peer-disconnected':
-      broadcast({ type: 'jam-peer-left', data: { name: msg.name } });
+      broadcast({ type: 'jam-peer-left', data: { name: msg.name || msg.peerId } });
       break;
     case 'jam-session-ended':
       jamActive = false;
