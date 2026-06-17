@@ -38,7 +38,10 @@ Works on **Chrome, Brave, Edge**, and any Chromium-based browser.
 - **Like/Save** — save tracks to your library with the heart button
 - **Playlists** — view and play your playlists from the popup
 - **Device Switching** — move playback to any Spotify Connect device
+- **Device Picker** — click album art to switch devices
+- **Copy Track Link** — copy Spotify URL to clipboard
 - **Sleep Timer** — 15/30/45/60 min or custom duration
+- **Session Stats** — minutes listened, skips, unique artists, day streak
 
 ### Listening Analytics Dashboard
 - **Session Waveform** — visual energy curve of your listening session
@@ -49,13 +52,23 @@ Works on **Chrome, Brave, Edge**, and any Chromium-based browser.
 - **Library Stats** — liked songs count, unique artists, recent additions
 - **Top Artists & Tracks** — your most-played music with rankings
 - **Listening Log** — chronological history of recently played tracks
+- **Album Mosaic** — visual grid of recently played albums
 - **Friend Activity** — see what your friends are listening to
 - **Vibe Sync** — compare your music taste with friends (multi-factor matching)
+- **Share Card** — export analytics as a shareable PNG image
+- **Export JSON** — download your analytics data for backup or analysis
 
 ### Smart Notifications
 - **Liked Song Alerts** — when a saved track plays on shuffle
 - **Friend Activity** — when someone you follow starts playing
 - **Focus Reminders** — nudges after extended listening sessions
+- **Notification Settings** — toggle each notification type independently
+
+### Settings
+- **Client ID Management** — update your Spotify app credentials
+- **Clear Analytics** — wipe all local listening data with one click
+- **Check for Updates** — manually check GitHub for new versions
+- **Keyboard Shortcuts** — customize at `chrome://extensions/shortcuts` (link in Settings)
 
 ### Keyboard Shortcuts
 
@@ -65,7 +78,10 @@ Works on **Chrome, Brave, Edge**, and any Chromium-based browser.
 | Next Track | `Alt + Shift + →` |
 | Previous Track | `Alt + Shift + ←` |
 
-Customize at `chrome://extensions/shortcuts` (there's a button in Settings).
+### UI Features
+- **Time-based Greeting** — shows Good Morning/Afternoon/Evening based on your local time
+- **Responsive Layout** — popup adapts to content with fixed header and bottom bar
+- **Custom Scrollbars** — matching the dark theme aesthetic
 
 ---
 
