@@ -26,7 +26,9 @@ let pollTimer = null;     // debounce timer for post-command refresh
 let rateLimitedUntil = 0; // timestamp until which we should skip polling
 let jamActive = false;
 let jamRole = null;
-let jamSyncing = false;
+let jamApplying = false;
+let prevTrackUri = null;
+let prevIsPlaying = null;
 let creatingOffscreen = null;
 
 async function ensureOffscreenDocument() {
@@ -55,7 +57,7 @@ async function closeOffscreenDocument() {
   } catch {}
   jamActive = false;
   jamRole = null;
-  jamSyncing = false;
+  jamApplying = false;
 }
 
 // --- Port Management ---
@@ -120,58 +122,59 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
         }).catch(() => {});
       }
       break;
-    case 'jam-sync-state':
-      if (!jamActive || jamRole !== 'guest' || !msg.data) break;
-      jamSyncing = true;
+    case 'jam-host-command':
+      if (jamRole !== 'host' || !msg.data) break;
       (async () => {
         try {
-          const hostUri = msg.data.trackUri;
+          switch (msg.data.type) {
+            case 'play': await spotify.play().catch(() => {}); break;
+            case 'pause': await spotify.pause().catch(() => {}); break;
+            case 'next': await spotify.next().catch(() => {}); break;
+            case 'previous': await spotify.previous().catch(() => {}); break;
+            case 'seek': await spotify.seek(msg.data.positionMs).catch(() => {}); break;
+            case 'queue-add':
+              if (msg.data.uri) await spotify.addToQueue(msg.data.uri).catch(() => {});
+              break;
+          }
+          await afterHostAction();
+        } catch {}
+      })();
+      break;
+    case 'jam-apply-state':
+      if (!jamActive || jamRole !== 'guest' || !msg.data) break;
+      jamApplying = true;
+      (async () => {
+        try {
+          const host = msg.data;
           const localUri = lastState?.item?.uri;
-          if (hostUri && hostUri !== localUri) {
-            await spotify.play(undefined, [hostUri]).catch(() => {});
-            if (msg.data.positionMs > 1000) {
+
+          if (host.trackUri && host.trackUri !== localUri) {
+            await spotify.play(undefined, [host.trackUri]).catch(() => {});
+            if (host.positionMs > 1000) {
               await new Promise(r => setTimeout(r, 400));
-              await spotify.seek(msg.data.positionMs).catch(() => {});
+              await spotify.seek(host.positionMs).catch(() => {});
             }
           } else {
-            if (msg.data.isPlaying && !lastState?.is_playing) {
+            if (host.isPlaying && !lastState?.is_playing) {
               await spotify.play().catch(() => {});
-            } else if (!msg.data.isPlaying && lastState?.is_playing) {
+            } else if (!host.isPlaying && lastState?.is_playing) {
               await spotify.pause().catch(() => {});
             }
-            const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
-            if (drift > 3000 && msg.data.isPlaying) {
-              await spotify.seek(msg.data.positionMs).catch(() => {});
+
+            if (host.isPlaying) {
+              const elapsed = Date.now() - (host.timestamp || Date.now());
+              const expectedPos = host.positionMs + elapsed;
+              const drift = Math.abs((lastState?.progress_ms || 0) - expectedPos);
+              if (drift > 2000) {
+                await spotify.seek(expectedPos).catch(() => {});
+              }
             }
           }
           schedulePoll(500);
         } finally {
-          jamSyncing = false;
+          jamApplying = false;
         }
       })();
-      break;
-    case 'jam-sync-action':
-      if (!jamActive || jamRole !== 'guest') break;
-      jamSyncing = true;
-      (async () => {
-        try {
-          switch (msg.data?.action) {
-            case 'play':
-              if (msg.data.trackUri) await spotify.play(undefined, [msg.data.trackUri]).catch(() => {});
-              else if (msg.data.uris) await spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {});
-              else await spotify.play().catch(() => {});
-              break;
-            case 'pause': await spotify.pause().catch(() => {}); break;
-            case 'seek': await spotify.seek(msg.data.positionMs).catch(() => {}); break;
-          }
-          schedulePoll(500);
-        } finally {
-          jamSyncing = false;
-        }
-      })();
-      break;
-    case 'jam-queue-request':
-      if (msg.data?.uri) spotify.addToQueue(msg.data.uri).catch(() => {});
       break;
     case 'jam-queue-sync':
       broadcast({ type: 'jam-queue-sync', data: msg.data });
@@ -187,6 +190,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       break;
     case 'jam-reconnecting':
       broadcast({ type: 'jam-reconnecting', data: { attempt: msg.attempt, maxAttempts: msg.maxAttempts } });
+      break;
+    case 'jam-sync-status':
+      broadcast({ type: 'jam-sync-status', data: msg.data });
       break;
     case 'jam-session-ended':
       jamActive = false;
@@ -205,6 +211,18 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       break;
   }
 });
+
+async function afterHostAction() {
+  await new Promise(r => setTimeout(r, 300));
+  const state = await spotify.getPlayerState().catch(() => null);
+  if (state) {
+    lastState = state;
+    chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
+  }
+  const q = await spotify.getQueue().catch(() => null);
+  if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+  schedulePoll(300);
+}
 
 // --- Polling ---
 
@@ -277,6 +295,21 @@ async function doPoll() {
 
     const state = await spotify.getPlayerState();
     lastState = state;
+
+    if (jamRole === 'host' && state) {
+      const curUri = state.item?.uri;
+      const curPlaying = state.is_playing;
+      if (curUri !== prevTrackUri || curPlaying !== prevIsPlaying) {
+        chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
+        if (curUri !== prevTrackUri) {
+          spotify.getQueue().then(q => {
+            chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+      prevTrackUri = curUri;
+      prevIsPlaying = curPlaying;
+    }
 
     if (state) {
       const { trackChanged } = analytics.processPlayerState(state);
@@ -400,56 +433,29 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'play':
-        if (jamRole === 'guest' && !jamSyncing) break;
+        if (jamRole === 'guest' && !jamApplying) break;
         await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
-        schedulePoll(300);
-        if (jamRole === 'host') {
-          chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', uris: msg.uris, contextUri: msg.contextUri } }).catch(() => {});
-        }
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'pause':
-        if (jamRole === 'guest' && !jamSyncing) break;
+        if (jamRole === 'guest' && !jamApplying) break;
         await spotify.pause();
-        schedulePoll(300);
-        if (jamRole === 'host') chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'pause' } }).catch(() => {});
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'next':
         if (jamRole === 'guest') break;
         await spotify.next();
-        schedulePoll(500);
-        if (jamRole === 'host') {
-          setTimeout(async () => {
-            const state = await spotify.getPlaybackState().catch(() => null);
-            if (state?.item?.uri) {
-              chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
-              chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
-            }
-            const q = await spotify.getQueue().catch(() => null);
-            if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
-          }, 600);
-        }
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
         break;
       case 'previous':
         if (jamRole === 'guest') break;
         await spotify.previous();
-        schedulePoll(500);
-        if (jamRole === 'host') {
-          setTimeout(async () => {
-            const state = await spotify.getPlaybackState().catch(() => null);
-            if (state?.item?.uri) {
-              chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
-              chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
-            }
-            const q = await spotify.getQueue().catch(() => null);
-            if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
-          }, 600);
-        }
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(500); }
         break;
       case 'seek':
-        if (jamRole === 'guest' && !jamSyncing) break;
+        if (jamRole === 'guest' && !jamApplying) break;
         await spotify.seek(msg.positionMs);
-        schedulePoll(300);
-        if (jamRole === 'host') chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'seek', positionMs: msg.positionMs } }).catch(() => {});
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'volume':
         await spotify.setVolume(msg.percent);
@@ -458,12 +464,12 @@ async function handlePortMessage(msg, port) {
       case 'shuffle':
         if (jamRole === 'guest') break;
         await spotify.setShuffle(msg.state);
-        schedulePoll(300);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'repeat':
         if (jamRole === 'guest') break;
         await spotify.setRepeat(msg.mode);
-        schedulePoll(300);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       case 'transfer':
         await spotify.transferPlayback(msg.deviceId);
@@ -650,8 +656,9 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'play-playlist': {
+        if (jamRole === 'guest') break;
         await spotify.play(msg.deviceId, undefined, msg.contextUri);
-        schedulePoll(300);
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       }
       case 'get-update-info': {
@@ -665,16 +672,14 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'add-to-queue': {
+        if (jamRole === 'guest') {
+          chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type: 'queue-add', uri: msg.uri } }).catch(() => {});
+          port.postMessage({ type: 'queue-added', data: { uri: msg.uri } });
+          break;
+        }
         await spotify.addToQueue(msg.uri, msg.deviceId);
         port.postMessage({ type: 'queue-added', data: { uri: msg.uri } });
-        schedulePoll(300);
-        if (jamRole === 'host') {
-          setTimeout(() => {
-            spotify.getQueue().then(q => {
-              chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
-            }).catch(() => {});
-          }, 500);
-        }
+        if (jamRole === 'host') { await afterHostAction(); } else { schedulePoll(300); }
         break;
       }
       case 'search': {
@@ -762,9 +767,18 @@ async function handlePortMessage(msg, port) {
         port.postMessage({ type: 'jam-state', data: jamState });
         break;
       }
+      case 'jam-request': {
+        if (jamActive && jamRole === 'guest') {
+          chrome.runtime.sendMessage({ action: 'jam-forward-request', data: msg.data }).catch(() => {});
+        }
+        break;
+      }
       case 'jam-queue-add': {
-        if (jamActive) {
-          chrome.runtime.sendMessage({ action: 'jam-queue-add', data: { uri: msg.uri, name: msg.name } }).catch(() => {});
+        if (jamRole === 'host') {
+          await spotify.addToQueue(msg.uri).catch(() => {});
+          await afterHostAction();
+        } else if (jamRole === 'guest') {
+          chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type: 'queue-add', uri: msg.uri } }).catch(() => {});
         }
         break;
       }

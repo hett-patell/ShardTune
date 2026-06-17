@@ -835,6 +835,10 @@ function renderPlaylists(data) {
 // --- Transport Controls ---
 
 els.playBtn.addEventListener('click', () => {
+  if (isJamGuest()) {
+    sendJamRequest(currentState?.is_playing ? 'pause' : 'play');
+    return;
+  }
   if (currentState?.is_playing) {
     send({ action: 'pause' });
     currentState.is_playing = false;
@@ -876,8 +880,14 @@ function showPlayDevicePicker() {
   els.deviceDropdown.classList.add('open');
 }
 
-els.nextBtn.addEventListener('click', () => send({ action: 'next' }));
-els.prevBtn.addEventListener('click', () => send({ action: 'previous' }));
+els.nextBtn.addEventListener('click', () => {
+  if (isJamGuest()) { sendJamRequest('next'); return; }
+  send({ action: 'next' });
+});
+els.prevBtn.addEventListener('click', () => {
+  if (isJamGuest()) { sendJamRequest('previous'); return; }
+  send({ action: 'previous' });
+});
 
 els.shuffleBtn.addEventListener('click', () => {
   const newState = !(currentState?.shuffle_state === true);
@@ -928,7 +938,11 @@ els.progressTrack.addEventListener('pointerup', e => {
   seekDragging = false;
   const posMs = handleSeekDrag(e);
   if (posMs !== null) {
-    send({ action: 'seek', positionMs: posMs });
+    if (isJamGuest()) {
+      sendJamRequest('seek', { positionMs: posMs });
+    } else {
+      send({ action: 'seek', positionMs: posMs });
+    }
     currentState.progress_ms = posMs;
     startProgressTimer();
   }
@@ -1269,6 +1283,14 @@ function handleMessage(msg) {
     case 'jam-reconnecting':
       showToast(`Reconnecting... (${msg.data?.attempt}/${msg.data?.maxAttempts})`);
       break;
+    case 'jam-sync-status': {
+      const state = msg.data?.state;
+      if (els.jamSyncStatus) {
+        const labels = { CONNECTING: 'Connecting...', SYNCING: 'Syncing...', SYNCED: 'Synced', DESYNCED: 'Re-syncing...', RECONNECTING: 'Reconnecting...' };
+        els.jamSyncStatus.textContent = labels[state] || state || 'Synced';
+      }
+      break;
+    }
     case 'jam-state':
       if (msg.data?.active) {
         jamState = msg.data;
@@ -1385,15 +1407,20 @@ function renderJamQueue(tracks) {
   }).join('');
 }
 
+function isJamGuest() {
+  return jamState?.active && jamState.role === 'guest';
+}
+
+function sendJamRequest(type, extra = {}) {
+  send({ action: 'jam-request', data: { type, ...extra } });
+}
+
 function updateGuestControls() {
-  const isGuest = jamState?.active && jamState.role === 'guest';
-  const controlBtns = [els.prevBtn, els.nextBtn, els.shuffleBtn, els.repeatBtn];
-  controlBtns.forEach(btn => {
+  const isGuest = isJamGuest();
+  [els.shuffleBtn, els.repeatBtn].forEach(btn => {
     btn.classList.toggle('jam-disabled', isGuest);
     btn.disabled = isGuest;
   });
-  els.playBtn.classList.toggle('jam-disabled', isGuest);
-  els.playBtn.disabled = isGuest;
 }
 
 // --- Toast ---
