@@ -1665,6 +1665,11 @@ body {
   background: rgba(29,185,84,0.1);
 }
 
+.jam-disabled {
+  opacity: 0.3 !important;
+  pointer-events: none !important;
+}
+
 /* --- Jam Screen --- */
 
 #jam-screen:not(.hidden) {

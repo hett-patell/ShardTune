@@ -10,6 +10,10 @@ let stateAction = null;
 let actionAction = null;
 let queueAction = null;
 let helloAction = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 5;
+const SYNC_INTERVAL = 4000;
 
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -20,10 +24,7 @@ function generateRoomCode() {
 }
 
 function sendToBg(msg) {
-  console.log('[Jam] sendToBg:', msg.action);
-  chrome.runtime.sendMessage(msg).catch(e => {
-    console.error('[Jam] sendToBg FAILED:', msg.action, e.message);
-  });
+  chrome.runtime.sendMessage(msg).catch(() => {});
 }
 
 function getPeerList() {
@@ -35,11 +36,20 @@ function getPeerList() {
 }
 
 function broadcastPeerList() {
-  const list = getPeerList();
-  sendToBg({ action: 'jam-peers-updated', data: list });
+  sendToBg({ action: 'jam-peers-updated', data: getPeerList() });
+}
+
+function destroyRoom() {
+  if (room) { try { room.leave(); } catch {} }
+  room = null;
+  stateAction = null;
+  actionAction = null;
+  queueAction = null;
+  helloAction = null;
 }
 
 function initRoom() {
+  destroyRoom();
   room = joinRoom({ appId: 'shardtune-jam', password: roomCode }, roomCode);
 
   stateAction = room.makeAction('state');
@@ -48,54 +58,78 @@ function initRoom() {
   helloAction = room.makeAction('hello');
 
   room.onPeerJoin = (peerId) => {
-    console.log('[Jam] Peer joined:', peerId);
+    reconnectAttempts = 0;
     helloAction.send({ name: myName, isHost: role === 'host' });
     sendToBg({ action: 'jam-peer-connected', peerId });
+    if (role === 'host') {
+      sendToBg({ action: 'jam-request-state' });
+      sendToBg({ action: 'jam-request-queue' });
+    }
   };
 
   room.onPeerLeave = (peerId) => {
-    console.log('[Jam] Peer left:', peerId);
     const name = peerNames.get(peerId)?.name;
+    const wasHost = peerNames.get(peerId)?.isHost;
     peerNames.delete(peerId);
     broadcastPeerList();
     sendToBg({ action: 'jam-peer-disconnected', peerId, name });
+    if (role === 'guest' && wasHost && peerNames.size === 0) {
+      attemptReconnect();
+    }
   };
 
   helloAction.onMessage = (data, { peerId }) => {
-    console.log('[Jam] Hello from:', peerId, data.name, 'isHost:', data.isHost);
     peerNames.set(peerId, { name: data.name, isHost: data.isHost || false });
     broadcastPeerList();
   };
 
   stateAction.onMessage = (data) => {
-    if (role === 'guest') {
-      sendToBg({ action: 'jam-sync-state', data });
-    }
+    if (role === 'guest') sendToBg({ action: 'jam-sync-state', data });
   };
 
   actionAction.onMessage = (data) => {
-    if (role === 'guest') {
-      sendToBg({ action: 'jam-sync-action', data });
-    }
+    if (role === 'guest') sendToBg({ action: 'jam-sync-action', data });
   };
 
   queueAction.onMessage = (data) => {
-    if (role === 'host') {
+    if (role === 'guest' && data.type === 'queue-sync') {
+      sendToBg({ action: 'jam-queue-sync', data });
+    } else if (role === 'host') {
       sendToBg({ action: 'jam-queue-request', data });
     }
   };
+}
+
+function attemptReconnect() {
+  if (reconnectAttempts >= MAX_RECONNECT) {
+    sendToBg({ action: 'jam-error', data: 'Lost connection to host' });
+    cleanup();
+    sendToBg({ action: 'jam-ended' });
+    return;
+  }
+  reconnectAttempts++;
+  const delay = Math.min(2000 * reconnectAttempts, 10000);
+  sendToBg({ action: 'jam-reconnecting', attempt: reconnectAttempts, maxAttempts: MAX_RECONNECT });
+  reconnectTimer = setTimeout(() => {
+    initRoom();
+  }, delay);
+}
+
+function startSyncLoop() {
+  if (syncInterval) clearInterval(syncInterval);
+  sendToBg({ action: 'jam-request-state' });
+  syncInterval = setInterval(() => {
+    sendToBg({ action: 'jam-request-state' });
+  }, SYNC_INTERVAL);
 }
 
 function handleCreate(name) {
   myName = name;
   role = 'host';
   roomCode = generateRoomCode();
-  console.log('[Jam] Creating room:', roomCode, 'as:', selfId);
+  reconnectAttempts = 0;
   initRoom();
-  sendToBg({ action: 'jam-request-state' });
-  syncInterval = setInterval(() => {
-    sendToBg({ action: 'jam-request-state' });
-  }, 5000);
+  startSyncLoop();
   return { ok: true, roomCode };
 }
 
@@ -103,22 +137,17 @@ function handleJoin(code, name) {
   myName = name;
   role = 'guest';
   roomCode = code.toUpperCase();
-  console.log('[Jam] Joining room:', roomCode, 'as:', selfId);
+  reconnectAttempts = 0;
   initRoom();
   return { ok: true, roomCode };
 }
 
 function cleanup() {
-  if (room) {
-    room.leave();
-    room = null;
-  }
-  stateAction = null;
-  actionAction = null;
-  queueAction = null;
-  helloAction = null;
-  peerNames.clear();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (syncInterval) { clearInterval(syncInterval); syncInterval = null; }
+  destroyRoom();
+  peerNames.clear();
+  reconnectAttempts = 0;
   role = null;
   roomCode = null;
   myName = '';
@@ -159,6 +188,18 @@ function broadcastAction(data) {
   actionAction.send(data);
 }
 
+function broadcastQueue(queueData) {
+  if (role !== 'host' || !queueAction) return;
+  const tracks = (queueData?.queue || []).slice(0, 20).map(t => ({
+    uri: t.uri,
+    name: t.name,
+    artist: t.artists?.map(a => a.name).join(', ') || '',
+    artUrl: t.album?.images?.[1]?.url || t.album?.images?.[0]?.url || '',
+    durationMs: t.duration_ms || 0
+  }));
+  queueAction.send({ type: 'queue-sync', tracks });
+}
+
 function broadcastQueueAdd(data) {
   if (!queueAction) return;
   queueAction.send(data);
@@ -183,6 +224,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     case 'jam-broadcast-action':
       broadcastAction(msg.data);
+      break;
+    case 'jam-broadcast-queue':
+      broadcastQueue(msg.data);
       break;
     case 'jam-queue-add':
       broadcastQueueAdd(msg.data);

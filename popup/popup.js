@@ -1230,12 +1230,14 @@ function handleMessage(msg) {
       els.jamRoomCode.textContent = msg.data.roomCode;
       renderJamPeers([], els.jamPeerList);
       updateJamButton();
+      updateGuestControls();
       showToast('Jam session created');
       break;
     case 'jam-joined':
       jamState = { active: true, role: 'guest', roomCode: msg.data.roomCode, peers: [] };
       showJamState('guest');
       updateJamButton();
+      updateGuestControls();
       showToast('Joined jam session');
       break;
     case 'jam-ended':
@@ -1243,6 +1245,7 @@ function handleMessage(msg) {
       showJamState('idle');
       els.jamCodeInput.value = '';
       updateJamButton();
+      updateGuestControls();
       showToast(msg.data?.reason || 'Jam session ended');
       break;
     case 'jam-peers':
@@ -1257,6 +1260,14 @@ function handleMessage(msg) {
       break;
     case 'jam-peer-left':
       showToast(`${msg.data?.name || 'Someone'} left the jam`);
+      break;
+    case 'jam-queue-sync':
+      if (jamState?.role === 'guest' && msg.data?.tracks) {
+        renderJamQueue(msg.data.tracks);
+      }
+      break;
+    case 'jam-reconnecting':
+      showToast(`Reconnecting... (${msg.data?.attempt}/${msg.data?.maxAttempts})`);
       break;
     case 'jam-state':
       if (msg.data?.active) {
@@ -1274,6 +1285,7 @@ function handleMessage(msg) {
         showJamState('idle');
       }
       updateJamButton();
+      updateGuestControls();
       break;
     case 'jam-error':
       showJamState(jamState?.active ? (jamState.role || 'idle') : 'idle');
@@ -1352,6 +1364,36 @@ function renderJamPeers(peers, listEl) {
 
 function updateJamButton() {
   els.jamBtn.classList.toggle('active', jamState?.active === true);
+}
+
+function renderJamQueue(tracks) {
+  if (!tracks?.length) {
+    els.queueList.innerHTML = '<div class="q-item"><span class="q-idx" style="color:var(--fg-faint)">Queue empty</span></div>';
+    return;
+  }
+  els.queueList.innerHTML = tracks.slice(0, 3).map((t, i) => {
+    const artHtml = t.artUrl ? `<img src="${safeImg(t.artUrl)}" alt="">` : '';
+    return `<div class="q-item">
+      <span class="q-idx">${String(i + 1).padStart(2, '0')}</span>
+      <div class="q-art">${artHtml}</div>
+      <div class="q-info">
+        <div class="q-name">${esc(t.name || '')}</div>
+        <div class="q-artist">${esc(t.artist || '')}</div>
+      </div>
+      <span class="q-dur">${fmt(t.durationMs || 0)}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateGuestControls() {
+  const isGuest = jamState?.active && jamState.role === 'guest';
+  const controlBtns = [els.prevBtn, els.nextBtn, els.shuffleBtn, els.repeatBtn];
+  controlBtns.forEach(btn => {
+    btn.classList.toggle('jam-disabled', isGuest);
+    btn.disabled = isGuest;
+  });
+  els.playBtn.classList.toggle('jam-disabled', isGuest);
+  els.playBtn.disabled = isGuest;
 }
 
 // --- Toast ---

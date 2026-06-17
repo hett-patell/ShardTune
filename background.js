@@ -25,6 +25,8 @@ let polling = null;       // single-flight guard for poll()
 let pollTimer = null;     // debounce timer for post-command refresh
 let rateLimitedUntil = 0; // timestamp until which we should skip polling
 let jamActive = false;
+let jamRole = null;
+let jamSyncing = false;
 let creatingOffscreen = null;
 
 async function ensureOffscreenDocument() {
@@ -52,6 +54,8 @@ async function closeOffscreenDocument() {
     if (existingContexts.length > 0) await chrome.offscreen.closeDocument();
   } catch {}
   jamActive = false;
+  jamRole = null;
+  jamSyncing = false;
 }
 
 // --- Port Management ---
@@ -105,51 +109,72 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
   switch (msg.action) {
     case 'jam-request-state':
-      if (lastState) {
+      if (jamRole === 'host' && lastState) {
         chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: lastState }).catch(() => {});
       }
       break;
-    case 'jam-sync-state':
-      if (msg.data && jamActive) {
-        const hostUri = msg.data.trackUri;
-        const localUri = lastState?.item?.uri;
-        if (hostUri && hostUri !== localUri) {
-          spotify.play(undefined, [hostUri]).then(() => {
-            if (msg.data.positionMs > 1000) {
-              setTimeout(() => spotify.seek(msg.data.positionMs).catch(() => {}), 300);
-            }
-          }).catch(() => {});
-        } else {
-          const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
-          if (drift > 3000) spotify.seek(msg.data.positionMs).catch(() => {});
-          if (msg.data.isPlaying && !lastState?.is_playing) spotify.play().catch(() => {});
-          else if (!msg.data.isPlaying && lastState?.is_playing) spotify.pause().catch(() => {});
-        }
-        schedulePoll(500);
+    case 'jam-request-queue':
+      if (jamRole === 'host') {
+        spotify.getQueue().then(q => {
+          chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+        }).catch(() => {});
       }
       break;
-    case 'jam-sync-action':
-      if (!jamActive) break;
-      switch (msg.data?.action) {
-        case 'play':
-          if (msg.data.trackUri) {
-            spotify.play(undefined, [msg.data.trackUri]).catch(() => {});
-          } else if (msg.data.uris) {
-            spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {});
+    case 'jam-sync-state':
+      if (!jamActive || jamRole !== 'guest' || !msg.data) break;
+      jamSyncing = true;
+      (async () => {
+        try {
+          const hostUri = msg.data.trackUri;
+          const localUri = lastState?.item?.uri;
+          if (hostUri && hostUri !== localUri) {
+            await spotify.play(undefined, [hostUri]).catch(() => {});
+            if (msg.data.positionMs > 1000) {
+              await new Promise(r => setTimeout(r, 400));
+              await spotify.seek(msg.data.positionMs).catch(() => {});
+            }
           } else {
-            spotify.play().catch(() => {});
+            if (msg.data.isPlaying && !lastState?.is_playing) {
+              await spotify.play().catch(() => {});
+            } else if (!msg.data.isPlaying && lastState?.is_playing) {
+              await spotify.pause().catch(() => {});
+            }
+            const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
+            if (drift > 3000 && msg.data.isPlaying) {
+              await spotify.seek(msg.data.positionMs).catch(() => {});
+            }
           }
-          break;
-        case 'pause': spotify.pause().catch(() => {}); break;
-        case 'next':
-        case 'previous':
-          break;
-        case 'seek': spotify.seek(msg.data.positionMs).catch(() => {}); break;
-      }
-      schedulePoll(500);
+          schedulePoll(500);
+        } finally {
+          jamSyncing = false;
+        }
+      })();
+      break;
+    case 'jam-sync-action':
+      if (!jamActive || jamRole !== 'guest') break;
+      jamSyncing = true;
+      (async () => {
+        try {
+          switch (msg.data?.action) {
+            case 'play':
+              if (msg.data.trackUri) await spotify.play(undefined, [msg.data.trackUri]).catch(() => {});
+              else if (msg.data.uris) await spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {});
+              else await spotify.play().catch(() => {});
+              break;
+            case 'pause': await spotify.pause().catch(() => {}); break;
+            case 'seek': await spotify.seek(msg.data.positionMs).catch(() => {}); break;
+          }
+          schedulePoll(500);
+        } finally {
+          jamSyncing = false;
+        }
+      })();
       break;
     case 'jam-queue-request':
       if (msg.data?.uri) spotify.addToQueue(msg.data.uri).catch(() => {});
+      break;
+    case 'jam-queue-sync':
+      broadcast({ type: 'jam-queue-sync', data: msg.data });
       break;
     case 'jam-peers-updated':
       broadcast({ type: 'jam-peers', data: msg.data });
@@ -160,8 +185,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     case 'jam-peer-disconnected':
       broadcast({ type: 'jam-peer-left', data: { name: msg.name || msg.peerId } });
       break;
+    case 'jam-reconnecting':
+      broadcast({ type: 'jam-reconnecting', data: { attempt: msg.attempt, maxAttempts: msg.maxAttempts } });
+      break;
     case 'jam-session-ended':
       jamActive = false;
+      jamRole = null;
       closeOffscreenDocument();
       broadcast({ type: 'jam-ended', data: { reason: msg.data?.reason || 'Host ended the session' } });
       break;
@@ -170,6 +199,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       break;
     case 'jam-ended':
       jamActive = false;
+      jamRole = null;
       closeOffscreenDocument();
       broadcast({ type: 'jam-ended' });
       break;
@@ -370,55 +400,68 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'play':
+        if (jamRole === 'guest' && !jamSyncing) break;
         await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
         schedulePoll(300);
-        if (jamActive) {
+        if (jamRole === 'host') {
           chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', uris: msg.uris, contextUri: msg.contextUri } }).catch(() => {});
         }
         break;
       case 'pause':
+        if (jamRole === 'guest' && !jamSyncing) break;
         await spotify.pause();
         schedulePoll(300);
-        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'pause' } }).catch(() => {});
+        if (jamRole === 'host') chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'pause' } }).catch(() => {});
         break;
       case 'next':
+        if (jamRole === 'guest') break;
         await spotify.next();
         schedulePoll(500);
-        if (jamActive) {
+        if (jamRole === 'host') {
           setTimeout(async () => {
             const state = await spotify.getPlaybackState().catch(() => null);
             if (state?.item?.uri) {
               chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
+              chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
             }
-          }, 800);
+            const q = await spotify.getQueue().catch(() => null);
+            if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+          }, 600);
         }
         break;
       case 'previous':
+        if (jamRole === 'guest') break;
         await spotify.previous();
         schedulePoll(500);
-        if (jamActive) {
+        if (jamRole === 'host') {
           setTimeout(async () => {
             const state = await spotify.getPlaybackState().catch(() => null);
             if (state?.item?.uri) {
               chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
+              chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
             }
-          }, 800);
+            const q = await spotify.getQueue().catch(() => null);
+            if (q) chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+          }, 600);
         }
         break;
       case 'seek':
+        if (jamRole === 'guest' && !jamSyncing) break;
         await spotify.seek(msg.positionMs);
         schedulePoll(300);
-        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'seek', positionMs: msg.positionMs } }).catch(() => {});
+        if (jamRole === 'host') chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'seek', positionMs: msg.positionMs } }).catch(() => {});
         break;
       case 'volume':
         await spotify.setVolume(msg.percent);
         schedulePoll(300);
         break;
       case 'shuffle':
+        if (jamRole === 'guest') break;
         await spotify.setShuffle(msg.state);
         schedulePoll(300);
         break;
       case 'repeat':
+        if (jamRole === 'guest') break;
         await spotify.setRepeat(msg.mode);
         schedulePoll(300);
         break;
@@ -625,6 +668,13 @@ async function handlePortMessage(msg, port) {
         await spotify.addToQueue(msg.uri, msg.deviceId);
         port.postMessage({ type: 'queue-added', data: { uri: msg.uri } });
         schedulePoll(300);
+        if (jamRole === 'host') {
+          setTimeout(() => {
+            spotify.getQueue().then(q => {
+              chrome.runtime.sendMessage({ action: 'jam-broadcast-queue', data: q }).catch(() => {});
+            }).catch(() => {});
+          }, 500);
+        }
         break;
       }
       case 'search': {
@@ -674,6 +724,7 @@ async function handlePortMessage(msg, port) {
         const result = await chrome.runtime.sendMessage({ action: 'jam-create', name: userName });
         if (result?.ok) {
           jamActive = true;
+          jamRole = 'host';
           broadcast({ type: 'jam-created', data: { roomCode: result.roomCode } });
         } else {
           broadcast({ type: 'jam-error', data: result?.error || 'Failed to create session' });
@@ -687,6 +738,7 @@ async function handlePortMessage(msg, port) {
         const joinResult = await chrome.runtime.sendMessage({ action: 'jam-join', code: msg.code, name: joinName });
         if (joinResult?.ok) {
           jamActive = true;
+          jamRole = 'guest';
           broadcast({ type: 'jam-joined', data: { roomCode: joinResult.roomCode } });
         } else {
           broadcast({ type: 'jam-error', data: joinResult?.error || 'Failed to join session' });
@@ -696,6 +748,7 @@ async function handlePortMessage(msg, port) {
       case 'jam-leave': {
         await chrome.runtime.sendMessage({ action: 'jam-leave' }).catch(() => {});
         jamActive = false;
+        jamRole = null;
         await closeOffscreenDocument();
         broadcast({ type: 'jam-ended' });
         break;
@@ -774,8 +827,12 @@ chrome.runtime.onStartup.addListener(() => {
 // durable fallback poll alarm exists on every worker spawn.
 startSlowPolling();
 
-chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(contexts => {
+chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(async contexts => {
   if (contexts.some(c => c.documentUrl?.includes('offscreen/jam.html'))) {
     jamActive = true;
+    try {
+      const state = await chrome.runtime.sendMessage({ action: 'jam-get-state' });
+      if (state?.role) jamRole = state.role;
+    } catch {}
   }
 }).catch(() => {});
