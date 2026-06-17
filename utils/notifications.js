@@ -113,6 +113,12 @@ async function checkFriendActivity() {
 
       knownFriendTracks.set(key, current);
     }
+    if (knownFriendTracks.size > 100) {
+      const iter = knownFriendTracks.keys();
+      for (let i = knownFriendTracks.size - 100; i > 0; i--) {
+        knownFriendTracks.delete(iter.next().value);
+      }
+    }
   } catch {}
 }
 

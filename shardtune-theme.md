@@ -1,5 +1,12 @@
 # ShardTune Design Theme
 
+> **DEPRECATION NOTE (v1.2.0):** The pixel aesthetic (Press Start 2P font,
+> CRT scanlines, pixel hard shadows, corner bracket accents) was retired in
+> favor of the "Clean Swiss" direction. `--font-px` now maps to Inter Tight.
+> Sections below referencing Press Start 2P, scanline overlays, pixel shadows,
+> and corner accents are historical reference only. The current live styles are
+> in `popup/popup.css`.
+
 > Derived from **ShardPass** (Swiss Vermillion shell) × **ShardPet** (Pixel Arcade overlay).  
 > Accent swapped from vermillion → Spotify Green. Built for a Brave/Chrome MV3 extension popup.
 

@@ -70,6 +70,12 @@
             <rect x="9" y="9" width="6" height="6" fill="currentColor" opacity="0.3"/>
           </svg>
         </div>
+        <div id="jam-btn" class="h-btn" title="Jam session">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="5.5" cy="8" r="3.5"/>
+            <circle cx="10.5" cy="8" r="3.5"/>
+          </svg>
+        </div>
         <div id="settings-btn" class="h-btn" title="Settings">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="8" cy="8" r="2.5"/>
@@ -110,6 +116,38 @@
     <div class="search-bar">
       <input id="search-input" class="search-input" type="text" placeholder="Search tracks, artists..." spellcheck="false" autocomplete="off">
       <div id="search-results" class="search-results hidden"></div>
+    </div>
+
+    <!-- Jam Panel -->
+    <div id="jam-panel" class="jam-panel hidden">
+      <div id="jam-idle" class="jam-state">
+        <div class="jam-title">Jam Session</div>
+        <div class="jam-desc">Listen together in real-time with friends</div>
+        <button id="jam-create-btn" class="jam-action-btn">Create Session</button>
+        <div class="jam-join-row">
+          <input id="jam-code-input" class="jam-code-input" type="text" placeholder="Room code" maxlength="6" spellcheck="false" autocomplete="off">
+          <button id="jam-join-btn" class="jam-join-btn">Join</button>
+        </div>
+      </div>
+      <div id="jam-host" class="jam-state hidden">
+        <div class="jam-title">Hosting</div>
+        <div id="jam-room-code" class="jam-room-code" title="Click to copy"></div>
+        <div class="jam-label">Share this code with friends</div>
+        <div class="jam-peers-label">Listeners</div>
+        <div id="jam-peer-list" class="jam-peer-list"></div>
+        <button id="jam-end-btn" class="jam-end-btn">End Session</button>
+      </div>
+      <div id="jam-guest" class="jam-state hidden">
+        <div class="jam-title">Jamming</div>
+        <div id="jam-sync-status" class="jam-sync-status">Synced</div>
+        <div class="jam-peers-label">Listeners</div>
+        <div id="jam-guest-peer-list" class="jam-peer-list"></div>
+        <button id="jam-leave-btn" class="jam-end-btn">Leave</button>
+      </div>
+      <div id="jam-connecting" class="jam-state hidden">
+        <div class="jam-title">Connecting...</div>
+        <div class="jam-desc">Setting up P2P connection</div>
+      </div>
     </div>
 
     <!-- Scrollable Content -->
@@ -227,35 +265,35 @@
       <div class="queue-section">
         <div id="queue-label" class="section-label">Up Next</div>
         <div id="queue-list" class="q-list">
-          <div class="q-item">
-            <span class="q-idx" style="color:var(--fg-faint)">—</span>
-          </div>
+          <div class="q-item q-loading"><span class="q-idx" style="color:var(--fg-faint)">Loading...</span></div>
         </div>
       </div>
 
       <!-- Playlists -->
       <div class="playlists-section">
         <div class="section-label">Playlists</div>
-        <div id="playlists-list" class="playlists-list"></div>
+        <div id="playlists-list" class="playlists-list">
+          <div class="playlists-loading" style="font-size:10px;color:var(--fg-faint);padding:4px 0;grid-column:1/-1">Loading...</div>
+        </div>
       </div>
     </div>
 
     <!-- Stats Bar (Fixed) -->
     <div class="bottom-bar">
       <div class="b-stat">
-        <span id="stat-min" class="b-val green">0</span>
+        <span id="stat-min" class="b-val green">--</span>
         <span class="b-label">MIN</span>
       </div>
       <div class="b-stat">
-        <span id="stat-skips" class="b-val">0</span>
+        <span id="stat-skips" class="b-val">--</span>
         <span class="b-label">SKIPS</span>
       </div>
       <div class="b-stat">
-        <span id="stat-artists" class="b-val">0</span>
+        <span id="stat-artists" class="b-val">--</span>
         <span class="b-label">ARTISTS</span>
       </div>
       <div class="b-stat">
-        <span id="stat-streak" class="b-val streak">0d</span>
+        <span id="stat-streak" class="b-val streak">--</span>
         <span class="b-label">STREAK</span>
       </div>
     </div>
@@ -350,7 +388,7 @@
           </svg>
           <div>
             <div class="s-about-name">ShardTune</div>
-            <div id="s-about-ver" class="s-about-ver">v1.1.0</div>
+            <div id="s-about-ver" class="s-about-ver"></div>
           </div>
         </div>
         <div class="s-about-credit">

@@ -24,6 +24,35 @@ let isAuthenticated = false;
 let polling = null;       // single-flight guard for poll()
 let pollTimer = null;     // debounce timer for post-command refresh
 let rateLimitedUntil = 0; // timestamp until which we should skip polling
+let jamActive = false;
+let creatingOffscreen = null;
+
+async function ensureOffscreenDocument() {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL('offscreen/jam.html')]
+  });
+  if (existingContexts.length > 0) return;
+  if (creatingOffscreen) { await creatingOffscreen; return; }
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: 'offscreen/jam.html',
+    reasons: [chrome.offscreen.Reason.WEB_RTC],
+    justification: 'WebRTC peer connections for real-time listening sessions'
+  });
+  await creatingOffscreen;
+  creatingOffscreen = null;
+}
+
+async function closeOffscreenDocument() {
+  try {
+    const existingContexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT'],
+      documentUrls: [chrome.runtime.getURL('offscreen/jam.html')]
+    });
+    if (existingContexts.length > 0) await chrome.offscreen.closeDocument();
+  } catch {}
+  jamActive = false;
+}
 
 // --- Port Management ---
 
@@ -54,14 +83,78 @@ chrome.runtime.onConnect.addListener(port => {
     }
   }
 
+  if (jamActive) {
+    chrome.runtime.sendMessage({ action: 'jam-get-state' }).then(state => {
+      port.postMessage({ type: 'jam-state', data: state });
+    }).catch(() => {});
+  }
+
   port.onMessage.addListener(msg => handlePortMessage(msg, port));
 });
 
 function broadcast(message) {
   for (const port of ports) {
-    try { port.postMessage(message); } catch {}
+    try { port.postMessage(message); } catch (e) { console.warn('[ShardTune BG] broadcast send failed:', e.message); }
   }
 }
+
+// --- Jam: messages from offscreen document ---
+
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!sender.url?.includes('offscreen/jam.html')) return;
+
+  switch (msg.action) {
+    case 'jam-request-state':
+      if (lastState) {
+        chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: lastState }).catch(() => {});
+      }
+      break;
+    case 'jam-sync-state':
+      if (msg.data && jamActive) {
+        const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
+        if (drift > 2000) spotify.seek(msg.data.positionMs).catch(() => {});
+        if (msg.data.isPlaying && !lastState?.is_playing) spotify.play().catch(() => {});
+        else if (!msg.data.isPlaying && lastState?.is_playing) spotify.pause().catch(() => {});
+      }
+      break;
+    case 'jam-sync-action':
+      if (!jamActive) break;
+      switch (msg.data?.action) {
+        case 'play': spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {}); break;
+        case 'pause': spotify.pause().catch(() => {}); break;
+        case 'next': spotify.next().catch(() => {}); break;
+        case 'previous': spotify.previous().catch(() => {}); break;
+        case 'seek': spotify.seek(msg.data.positionMs).catch(() => {}); break;
+      }
+      schedulePoll(500);
+      break;
+    case 'jam-queue-request':
+      if (msg.data?.uri) spotify.addToQueue(msg.data.uri).catch(() => {});
+      break;
+    case 'jam-peers-updated':
+      broadcast({ type: 'jam-peers', data: msg.data });
+      break;
+    case 'jam-peer-connected':
+      broadcast({ type: 'jam-peer-joined', data: { name: msg.name } });
+      break;
+    case 'jam-peer-disconnected':
+      broadcast({ type: 'jam-peer-left', data: { name: msg.name } });
+      break;
+    case 'jam-session-ended':
+      jamActive = false;
+      closeOffscreenDocument();
+      broadcast({ type: 'jam-ended', data: { reason: msg.data?.reason || 'Host ended the session' } });
+      break;
+    case 'jam-error':
+      broadcast({ type: 'jam-error', data: msg.data });
+      break;
+    case 'jam-ended':
+      jamActive = false;
+      closeOffscreenDocument();
+      broadcast({ type: 'jam-ended' });
+      break;
+  }
+});
 
 // --- Polling ---
 
@@ -103,7 +196,7 @@ chrome.alarms.onAlarm.addListener(alarm => {
     poll();
   }
   if (alarm.name === ALARM_SLEEP) {
-    spotify.pause().catch(() => {});
+    spotify.pause().catch(e => console.warn('[ShardTune BG] Sleep pause failed:', e.message));
     broadcast({ type: 'sleep-fired' });
     storage.remove('sleepTimer');
   }
@@ -259,22 +352,27 @@ async function handlePortMessage(msg, port) {
       case 'play':
         await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
         schedulePoll(300);
+        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', uris: msg.uris, contextUri: msg.contextUri } }).catch(() => {});
         break;
       case 'pause':
         await spotify.pause();
         schedulePoll(300);
+        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'pause' } }).catch(() => {});
         break;
       case 'next':
         await spotify.next();
         schedulePoll(500);
+        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'next' } }).catch(() => {});
         break;
       case 'previous':
         await spotify.previous();
         schedulePoll(500);
+        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'previous' } }).catch(() => {});
         break;
       case 'seek':
         await spotify.seek(msg.positionMs);
         schedulePoll(300);
+        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'seek', positionMs: msg.positionMs } }).catch(() => {});
         break;
       case 'volume':
         await spotify.setVolume(msg.percent);
@@ -531,6 +629,58 @@ async function handlePortMessage(msg, port) {
         notifs.resetSession();
         broadcast({ type: 'auth-required' });
         break;
+
+      // --- Jam ---
+      case 'jam-create': {
+        await ensureOffscreenDocument();
+        const profile = await spotify.getUserProfile();
+        const userName = profile?.display_name || 'Host';
+        const result = await chrome.runtime.sendMessage({ action: 'jam-create', name: userName });
+        if (result?.ok) {
+          jamActive = true;
+          broadcast({ type: 'jam-created', data: { roomCode: result.roomCode } });
+        } else {
+          broadcast({ type: 'jam-error', data: result?.error || 'Failed to create session' });
+        }
+        break;
+      }
+      case 'jam-join': {
+        await ensureOffscreenDocument();
+        const joinProfile = await spotify.getUserProfile();
+        const joinName = joinProfile?.display_name || 'Guest';
+        const joinResult = await chrome.runtime.sendMessage({ action: 'jam-join', code: msg.code, name: joinName });
+        if (joinResult?.ok) {
+          jamActive = true;
+          broadcast({ type: 'jam-joined', data: { roomCode: joinResult.roomCode } });
+        } else {
+          broadcast({ type: 'jam-error', data: joinResult?.error || 'Failed to join session' });
+        }
+        break;
+      }
+      case 'jam-leave': {
+        await chrome.runtime.sendMessage({ action: 'jam-leave' }).catch(() => {});
+        jamActive = false;
+        await closeOffscreenDocument();
+        broadcast({ type: 'jam-ended' });
+        break;
+      }
+      case 'jam-get-state': {
+        if (!jamActive) {
+          port.postMessage({ type: 'jam-state', data: { active: false } });
+          break;
+        }
+        const jamState = await chrome.runtime.sendMessage({ action: 'jam-get-state' });
+        port.postMessage({ type: 'jam-state', data: jamState });
+        break;
+      }
+      case 'jam-queue-add': {
+        if (jamActive) {
+          chrome.runtime.sendMessage({ action: 'jam-queue-add', data: { uri: msg.uri, name: msg.name } }).catch(() => {});
+        }
+        break;
+      }
+      default:
+        console.warn('[ShardTune BG] Unknown action:', msg.action);
     }
   } catch (err) {
     try {
@@ -568,7 +718,7 @@ chrome.commands.onCommand.addListener(async command => {
         schedulePoll(500);
         break;
     }
-  } catch {}
+  } catch (e) { console.warn('[ShardTune BG] Command handler error:', e.message); }
 });
 
 // --- Startup ---
@@ -587,3 +737,9 @@ chrome.runtime.onStartup.addListener(() => {
 // onInstalled/onStartup do NOT fire on a normal MV3 respawn, so ensure the
 // durable fallback poll alarm exists on every worker spawn.
 startSlowPolling();
+
+chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(contexts => {
+  if (contexts.some(c => c.documentUrl?.includes('offscreen/jam.html'))) {
+    jamActive = true;
+  }
+}).catch(() => {});

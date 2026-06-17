@@ -115,9 +115,25 @@ const els = {
   sCheckUpdate: $('s-check-update'),
   updateStatus: $('update-status'),
   sAboutVer: $('s-about-ver'),
+  jamBtn: $('jam-btn'),
+  jamPanel: $('jam-panel'),
+  jamIdle: $('jam-idle'),
+  jamHost: $('jam-host'),
+  jamGuest: $('jam-guest'),
+  jamConnecting: $('jam-connecting'),
+  jamCreateBtn: $('jam-create-btn'),
+  jamCodeInput: $('jam-code-input'),
+  jamJoinBtn: $('jam-join-btn'),
+  jamRoomCode: $('jam-room-code'),
+  jamPeerList: $('jam-peer-list'),
+  jamGuestPeerList: $('jam-guest-peer-list'),
+  jamEndBtn: $('jam-end-btn'),
+  jamLeaveBtn: $('jam-leave-btn'),
+  jamSyncStatus: $('jam-sync-status'),
 };
 
 let currentState = null;
+let jamState = null;
 let currentTrackUri = null;
 let currentTrackId = null;
 let isTrackSaved = false;
@@ -353,6 +369,10 @@ document.addEventListener('click', e => {
     searchResults.classList.add('hidden');
   }
 });
+
+document.querySelector('.scroll-content')?.addEventListener('scroll', () => {
+  searchResults.classList.add('hidden');
+}, { passive: true });
 
 function renderSearchResults(data) {
   if (!data?.tracks?.items?.length && !data?.artists?.items?.length) {
@@ -876,27 +896,81 @@ els.repeatBtn.addEventListener('click', () => {
 
 // --- Seek ---
 
-els.progressTrack.addEventListener('click', e => {
-  if (!currentState?.item) return;
+let seekDragging = false;
+
+function handleSeekDrag(e) {
+  if (!currentState?.item) return null;
   const rect = els.progressTrack.getBoundingClientRect();
   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   const posMs = Math.round(pct * currentState.item.duration_ms);
-  send({ action: 'seek', positionMs: posMs });
-  currentState.progress_ms = posMs;
   els.progressFill.style.width = `${pct * 100}%`;
   els.timeCurrent.textContent = fmt(posMs);
+  return posMs;
+}
+
+els.progressTrack.addEventListener('pointerdown', e => {
+  if (!currentState?.item) return;
+  seekDragging = true;
+  els.progressTrack.setPointerCapture(e.pointerId);
+  stopProgressTimer();
+  handleSeekDrag(e);
+});
+
+els.progressTrack.addEventListener('pointermove', e => {
+  if (!seekDragging) return;
+  handleSeekDrag(e);
+});
+
+els.progressTrack.addEventListener('pointerup', e => {
+  if (!seekDragging) return;
+  seekDragging = false;
+  const posMs = handleSeekDrag(e);
+  if (posMs !== null) {
+    send({ action: 'seek', positionMs: posMs });
+    currentState.progress_ms = posMs;
+    startProgressTimer();
+  }
 });
 
 // --- Volume ---
 
-els.volTrack.addEventListener('click', e => {
-  if (els.volTrack.parentElement.classList.contains('disabled')) return;
+let volDragging = false;
+let volLastSent = -1;
+
+function handleVolumeDrag(e) {
+  if (els.volTrack.parentElement.classList.contains('disabled')) return -1;
   const rect = els.volTrack.getBoundingClientRect();
   const pct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
   const clamped = Math.max(0, Math.min(100, pct));
-  send({ action: 'volume', percent: clamped });
   els.volFill.style.width = `${clamped}%`;
   els.volPct.textContent = `${clamped}%`;
+  return clamped;
+}
+
+els.volTrack.addEventListener('pointerdown', e => {
+  if (els.volTrack.parentElement.classList.contains('disabled')) return;
+  volDragging = true;
+  els.volTrack.setPointerCapture(e.pointerId);
+  const pct = handleVolumeDrag(e);
+  if (pct >= 0) {
+    volLastSent = pct;
+    send({ action: 'volume', percent: pct });
+  }
+});
+
+els.volTrack.addEventListener('pointermove', e => {
+  if (!volDragging) return;
+  handleVolumeDrag(e);
+});
+
+els.volTrack.addEventListener('pointerup', e => {
+  if (!volDragging) return;
+  volDragging = false;
+  const pct = handleVolumeDrag(e);
+  if (pct >= 0 && pct !== volLastSent) {
+    send({ action: 'volume', percent: pct });
+  }
+  volLastSent = -1;
 });
 
 // --- Copy Link ---
@@ -1148,7 +1222,130 @@ function handleMessage(msg) {
       }
       break;
     }
+    case 'jam-created':
+      jamState = { active: true, role: 'host', roomCode: msg.data.roomCode, peers: [] };
+      showJamState('host');
+      els.jamRoomCode.textContent = msg.data.roomCode;
+      renderJamPeers([], els.jamPeerList);
+      updateJamButton();
+      showToast('Jam session created');
+      break;
+    case 'jam-joined':
+      jamState = { active: true, role: 'guest', roomCode: msg.data.roomCode, peers: [] };
+      showJamState('guest');
+      updateJamButton();
+      showToast('Joined jam session');
+      break;
+    case 'jam-ended':
+      jamState = null;
+      showJamState('idle');
+      els.jamCodeInput.value = '';
+      updateJamButton();
+      showToast(msg.data?.reason || 'Jam session ended');
+      break;
+    case 'jam-peers':
+      if (jamState) {
+        jamState.peers = msg.data || [];
+        const listEl = jamState.role === 'host' ? els.jamPeerList : els.jamGuestPeerList;
+        renderJamPeers(jamState.peers, listEl);
+      }
+      break;
+    case 'jam-peer-joined':
+      showToast(`${msg.data?.name || 'Someone'} joined the jam`);
+      break;
+    case 'jam-peer-left':
+      showToast(`${msg.data?.name || 'Someone'} left the jam`);
+      break;
+    case 'jam-state':
+      if (msg.data?.active) {
+        jamState = msg.data;
+        showJamState(msg.data.role);
+        if (msg.data.role === 'host') {
+          els.jamRoomCode.textContent = msg.data.roomCode;
+          renderJamPeers(msg.data.peers || [], els.jamPeerList);
+        } else {
+          renderJamPeers(msg.data.peers || [], els.jamGuestPeerList);
+        }
+        els.jamPanel.classList.remove('hidden');
+      } else {
+        jamState = null;
+        showJamState('idle');
+      }
+      updateJamButton();
+      break;
+    case 'jam-error':
+      showJamState(jamState?.active ? (jamState.role || 'idle') : 'idle');
+      showToast(typeof msg.data === 'string' ? msg.data : 'Jam error');
+      break;
   }
+}
+
+// --- Jam ---
+
+els.jamBtn.addEventListener('click', () => {
+  els.jamPanel.classList.toggle('hidden');
+  if (!els.jamPanel.classList.contains('hidden')) {
+    send({ action: 'jam-get-state' });
+  }
+});
+
+els.jamCreateBtn.addEventListener('click', () => {
+  showJamState('connecting');
+  send({ action: 'jam-create' });
+});
+
+els.jamJoinBtn.addEventListener('click', () => {
+  const code = els.jamCodeInput.value.trim().toUpperCase();
+  if (code.length !== 6) {
+    showToast('Enter a 6-character room code');
+    return;
+  }
+  showJamState('connecting');
+  send({ action: 'jam-join', code });
+});
+
+els.jamCodeInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') els.jamJoinBtn.click();
+});
+
+els.jamCodeInput.addEventListener('input', () => {
+  els.jamCodeInput.value = els.jamCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+});
+
+els.jamEndBtn.addEventListener('click', () => send({ action: 'jam-leave' }));
+els.jamLeaveBtn.addEventListener('click', () => send({ action: 'jam-leave' }));
+
+els.jamRoomCode?.addEventListener('click', () => {
+  navigator.clipboard.writeText(els.jamRoomCode.textContent);
+  showToast('Room code copied');
+});
+
+function showJamState(state) {
+  els.jamIdle.classList.add('hidden');
+  els.jamHost.classList.add('hidden');
+  els.jamGuest.classList.add('hidden');
+  els.jamConnecting.classList.add('hidden');
+  switch (state) {
+    case 'idle': els.jamIdle.classList.remove('hidden'); break;
+    case 'host': els.jamHost.classList.remove('hidden'); break;
+    case 'guest': els.jamGuest.classList.remove('hidden'); break;
+    case 'connecting': els.jamConnecting.classList.remove('hidden'); break;
+  }
+}
+
+function renderJamPeers(peers, listEl) {
+  if (!listEl) return;
+  if (!peers?.length) {
+    listEl.innerHTML = '<div class="jam-peer"><span style="color:var(--fg-faint)">Waiting for listeners...</span></div>';
+    return;
+  }
+  listEl.innerHTML = peers.map(p =>
+    `<div class="jam-peer"><div class="jam-peer-dot${p.isHost ? ' host' : ''}"></div><span>${esc(p.name || 'Unknown')}${p.isHost ? ' (host)' : ''}</span></div>`
+  ).join('');
+}
+
+function updateJamButton() {
+  els.jamBtn.classList.toggle('active', jamState?.active === true);
 }
 
 // --- Toast ---

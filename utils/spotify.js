@@ -204,7 +204,8 @@ export async function getValidToken() {
   if (Date.now() > (expiresAt || 0) - 60000) {
     try {
       return await refreshAccessToken();
-    } catch {
+    } catch (e) {
+      console.warn('[ShardTune API] Token refresh failed:', e.message);
       return null;
     }
   }
