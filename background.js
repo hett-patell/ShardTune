@@ -6,7 +6,6 @@ import * as notifs from './utils/notifications.js';
 import { checkForUpdates, getUpdateInfo } from './utils/update.js';
 
 const POLL_FAST = 5000;
-const POLL_JAM_GUEST = 15000;
 const POLL_SLOW_MINUTES = 1;
 const ALARM_POLL = 'shardtune-poll';
 const ALARM_SLEEP = 'shardtune-sleep';
@@ -28,6 +27,7 @@ let rateLimitedUntil = 0; // timestamp until which we should skip polling
 let jamActive = false;
 let jamRole = null;
 let jamApplying = false;
+let pendingSnapshot = null;
 let prevTrackUri = null;
 let prevIsPlaying = null;
 let creatingOffscreen = null;
@@ -59,6 +59,7 @@ async function closeOffscreenDocument() {
   jamActive = false;
   jamRole = null;
   jamApplying = false;
+  pendingSnapshot = null;
   prevTrackUri = null;
   prevIsPlaying = null;
 }
@@ -145,45 +146,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       })();
       break;
     case 'jam-apply-state':
-      if (!jamActive || jamRole !== 'guest' || !msg.data || jamApplying) break;
-      jamApplying = true;
-      (async () => {
-        try {
-          if (Date.now() < rateLimitedUntil) return;
-          const host = msg.data;
-          const localUri = lastState?.item?.uri;
-          const localPlaying = lastState?.is_playing ?? false;
-          const elapsed = Date.now() - (host.timestamp || Date.now());
-          const pollAge = lastState?._pollTime ? (Date.now() - lastState._pollTime) : 0;
-          const localProgress = (lastState?.progress_ms ?? 0) + (localPlaying ? pollAge : 0);
-
-          if (host.trackUri && host.trackUri !== localUri) {
-            const seekTo = host.positionMs + elapsed;
-            await spotify.play(undefined, [host.trackUri]).catch(() => {});
-            if (seekTo > 1000) {
-              await new Promise(r => setTimeout(r, 400));
-              await spotify.seek(seekTo).catch(() => {});
-            }
-          } else {
-            if (host.isPlaying && !localPlaying) {
-              await spotify.play().catch(() => {});
-            } else if (!host.isPlaying && localPlaying) {
-              await spotify.pause().catch(() => {});
-            }
-
-            if (host.isPlaying) {
-              const expectedPos = host.positionMs + elapsed;
-              const drift = Math.abs(localProgress - expectedPos);
-              if (drift > 2000) {
-                await spotify.seek(expectedPos).catch(() => {});
-              }
-            }
-          }
-          schedulePoll(2000);
-        } finally {
-          jamApplying = false;
-        }
-      })();
+      if (!jamActive || jamRole !== 'guest' || !msg.data) break;
+      if (jamApplying) {
+        pendingSnapshot = msg.data;
+        break;
+      }
+      applyGuestSnapshot(msg.data);
       break;
     case 'jam-queue-sync':
       broadcast({ type: 'jam-queue-sync', data: msg.data });
@@ -221,12 +189,56 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
+function applyGuestSnapshot(host) {
+  jamApplying = true;
+  (async () => {
+    try {
+      if (Date.now() < rateLimitedUntil) return;
+      const localUri = lastState?.item?.uri;
+      const localPlaying = lastState?.is_playing ?? false;
+      const elapsed = Date.now() - (host.timestamp || Date.now());
+      const localProgress = lastState?.progress_ms ?? 0;
+
+      if (host.trackUri && host.trackUri !== localUri) {
+        const seekTo = host.positionMs + elapsed;
+        await spotify.play(undefined, [host.trackUri]).catch(() => {});
+        if (seekTo > 1000) {
+          await new Promise(r => setTimeout(r, 400));
+          await spotify.seek(seekTo).catch(() => {});
+        }
+      } else {
+        if (host.isPlaying && !localPlaying) {
+          await spotify.play().catch(() => {});
+        } else if (!host.isPlaying && localPlaying) {
+          await spotify.pause().catch(() => {});
+        }
+
+        if (host.isPlaying) {
+          const expectedPos = host.positionMs + elapsed;
+          const drift = Math.abs(localProgress - expectedPos);
+          if (drift > 2000) {
+            await spotify.seek(expectedPos).catch(() => {});
+          }
+        }
+      }
+      schedulePoll(2000);
+    } finally {
+      jamApplying = false;
+      if (pendingSnapshot) {
+        const next = pendingSnapshot;
+        pendingSnapshot = null;
+        applyGuestSnapshot(next);
+      }
+    }
+  })();
+}
+
 let afterHostTimer = null;
 
 async function afterHostAction(fetchQueue = false) {
   if (afterHostTimer) clearTimeout(afterHostTimer);
   await new Promise((resolve) => {
-    afterHostTimer = setTimeout(() => { afterHostTimer = null; resolve(); }, 300);
+    afterHostTimer = setTimeout(() => { afterHostTimer = null; resolve(); }, 100);
   });
   const state = await spotify.getPlayerState().catch(() => null);
   if (state) {
@@ -247,7 +259,7 @@ async function afterHostAction(fetchQueue = false) {
 // --- Polling ---
 
 function startFastPolling() {
-  const interval = (jamRole === 'guest') ? POLL_JAM_GUEST : POLL_FAST;
+  const interval = POLL_FAST;
   if (pollInterval) {
     clearInterval(pollInterval);
   }
