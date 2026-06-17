@@ -111,19 +111,39 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       break;
     case 'jam-sync-state':
       if (msg.data && jamActive) {
-        const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
-        if (drift > 2000) spotify.seek(msg.data.positionMs).catch(() => {});
-        if (msg.data.isPlaying && !lastState?.is_playing) spotify.play().catch(() => {});
-        else if (!msg.data.isPlaying && lastState?.is_playing) spotify.pause().catch(() => {});
+        const hostUri = msg.data.trackUri;
+        const localUri = lastState?.item?.uri;
+        if (hostUri && hostUri !== localUri) {
+          spotify.play(undefined, [hostUri]).then(() => {
+            if (msg.data.positionMs > 1000) {
+              setTimeout(() => spotify.seek(msg.data.positionMs).catch(() => {}), 300);
+            }
+          }).catch(() => {});
+        } else {
+          const drift = Math.abs((lastState?.progress_ms || 0) - (msg.data.positionMs || 0));
+          if (drift > 3000) spotify.seek(msg.data.positionMs).catch(() => {});
+          if (msg.data.isPlaying && !lastState?.is_playing) spotify.play().catch(() => {});
+          else if (!msg.data.isPlaying && lastState?.is_playing) spotify.pause().catch(() => {});
+        }
+        schedulePoll(500);
       }
       break;
     case 'jam-sync-action':
       if (!jamActive) break;
       switch (msg.data?.action) {
-        case 'play': spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {}); break;
+        case 'play':
+          if (msg.data.trackUri) {
+            spotify.play(undefined, [msg.data.trackUri]).catch(() => {});
+          } else if (msg.data.uris) {
+            spotify.play(undefined, msg.data.uris, msg.data.contextUri).catch(() => {});
+          } else {
+            spotify.play().catch(() => {});
+          }
+          break;
         case 'pause': spotify.pause().catch(() => {}); break;
-        case 'next': spotify.next().catch(() => {}); break;
-        case 'previous': spotify.previous().catch(() => {}); break;
+        case 'next':
+        case 'previous':
+          break;
         case 'seek': spotify.seek(msg.data.positionMs).catch(() => {}); break;
       }
       schedulePoll(500);
@@ -352,7 +372,9 @@ async function handlePortMessage(msg, port) {
       case 'play':
         await spotify.play(msg.deviceId, msg.uris, msg.contextUri, msg.offset);
         schedulePoll(300);
-        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', uris: msg.uris, contextUri: msg.contextUri } }).catch(() => {});
+        if (jamActive) {
+          chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', uris: msg.uris, contextUri: msg.contextUri } }).catch(() => {});
+        }
         break;
       case 'pause':
         await spotify.pause();
@@ -362,12 +384,26 @@ async function handlePortMessage(msg, port) {
       case 'next':
         await spotify.next();
         schedulePoll(500);
-        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'next' } }).catch(() => {});
+        if (jamActive) {
+          setTimeout(async () => {
+            const state = await spotify.getPlaybackState().catch(() => null);
+            if (state?.item?.uri) {
+              chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
+            }
+          }, 800);
+        }
         break;
       case 'previous':
         await spotify.previous();
         schedulePoll(500);
-        if (jamActive) chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'previous' } }).catch(() => {});
+        if (jamActive) {
+          setTimeout(async () => {
+            const state = await spotify.getPlaybackState().catch(() => null);
+            if (state?.item?.uri) {
+              chrome.runtime.sendMessage({ action: 'jam-broadcast-action', data: { action: 'play', trackUri: state.item.uri } }).catch(() => {});
+            }
+          }, 800);
+        }
         break;
       case 'seek':
         await spotify.seek(msg.positionMs);

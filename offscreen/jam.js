@@ -92,9 +92,10 @@ function handleCreate(name) {
   roomCode = generateRoomCode();
   console.log('[Jam] Creating room:', roomCode, 'as:', selfId);
   initRoom();
+  sendToBg({ action: 'jam-request-state' });
   syncInterval = setInterval(() => {
     sendToBg({ action: 'jam-request-state' });
-  }, 10000);
+  }, 5000);
   return { ok: true, roomCode };
 }
 
