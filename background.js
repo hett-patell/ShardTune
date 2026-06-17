@@ -60,6 +60,7 @@ async function closeOffscreenDocument() {
   jamRole = null;
   jamApplying = false;
   pendingSnapshot = null;
+  guestCooldownUntil = 0;
   prevTrackUri = null;
   prevIsPlaying = null;
 }
@@ -189,35 +190,45 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
 });
 
+let guestCooldownUntil = 0;
+
 function applyGuestSnapshot(host) {
   jamApplying = true;
   (async () => {
     try {
       if (Date.now() < rateLimitedUntil) return;
+      if (Date.now() < guestCooldownUntil) return;
+
       const localUri = lastState?.item?.uri;
       const localPlaying = lastState?.is_playing ?? false;
       const elapsed = Date.now() - (host.timestamp || Date.now());
-      const localProgress = lastState?.progress_ms ?? 0;
+      const pollAge = lastState?._pollTime ? (Date.now() - lastState._pollTime) : 0;
+      const localProgress = (lastState?.progress_ms ?? 0) + (localPlaying ? pollAge : 0);
+      const sameTrack = !host.trackUri || host.trackUri === localUri;
+      const samePlayState = host.isPlaying === localPlaying;
 
-      if (host.trackUri && host.trackUri !== localUri) {
+      if (!sameTrack) {
         const seekTo = Math.max(0, host.positionMs + elapsed);
         await spotify.play(undefined, [host.trackUri], undefined, undefined, seekTo).catch(() => {});
-      } else {
-        if (host.isPlaying && !localPlaying) {
+        guestCooldownUntil = Date.now() + 3000;
+        schedulePoll(1000);
+      } else if (!samePlayState) {
+        if (host.isPlaying) {
           await spotify.play().catch(() => {});
-        } else if (!host.isPlaying && localPlaying) {
+        } else {
           await spotify.pause().catch(() => {});
         }
-
-        if (host.isPlaying) {
-          const expectedPos = host.positionMs + elapsed;
-          const drift = Math.abs(localProgress - expectedPos);
-          if (drift > 2000) {
-            await spotify.seek(expectedPos).catch(() => {});
-          }
+        guestCooldownUntil = Date.now() + 1500;
+        schedulePoll(1000);
+      } else if (host.isPlaying) {
+        const expectedPos = host.positionMs + elapsed;
+        const drift = Math.abs(localProgress - expectedPos);
+        if (drift > 5000) {
+          await spotify.seek(expectedPos).catch(() => {});
+          guestCooldownUntil = Date.now() + 2000;
+          schedulePoll(1000);
         }
       }
-      schedulePoll(2000);
     } finally {
       jamApplying = false;
       if (pendingSnapshot) {
