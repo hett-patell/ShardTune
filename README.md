@@ -40,7 +40,7 @@ Works on **Chrome, Brave, Edge**, and any Chromium-based browser.
 - **Device Switching** — move playback to any Spotify Connect device
 - **Device Picker** — click album art to switch devices
 - **Copy Track Link** — copy Spotify URL to clipboard
-- **Sleep Timer** — 15/30/45/60 min or custom duration
+- **Sleep Timer** — 15/30/45/60 min presets or custom (1-480 min), with live countdown badge
 - **Session Stats** — minutes listened, skips, unique artists, day streak
 
 ### Listening Analytics Dashboard

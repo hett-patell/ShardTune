@@ -761,7 +761,7 @@ function memoryInsights(mem) {
   if (topDay !== peak?.day) {
     insights.push({
       headline: `${DAY_FULL[topDay]} is your biggest listening day`,
-      detail: `Average vibe: ${topMood.label}`
+      detail: `Average vibe: ${topMood}`
     });
   }
 
@@ -775,14 +775,14 @@ function memoryInsights(mem) {
     const nm = vibeMood(nightE);
     insights.push({
       headline: 'Night owl detected',
-      detail: `Your late nights lean ${nm.label}`
+      detail: `Your late nights lean ${nm}`
     });
   } else if (morningPlays > nightPlays * 2 && morningPlays >= 3) {
     const mornE = morningSlots.reduce((s, sl) => s + sl.avgEnergy * sl.plays, 0) / morningPlays;
     const mm = vibeMood(mornE);
     insights.push({
       headline: 'Early bird vibes',
-      detail: `Mornings are ${mm.label} for you`
+      detail: `Mornings are ${mm} for you`
     });
   }
 
