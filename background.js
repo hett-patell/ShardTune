@@ -258,7 +258,7 @@ function startSyncLoop() {
     if (Date.now() < rateLimitedUntil) return;
     if (jamApplying) return;
 
-    const correction = syncEngine.tick(lastState?.progress_ms || 0);
+    const correction = syncEngine.tick();
     if (!correction) return;
 
     await spotify.seek(correction.seekTo).catch(() => {});
@@ -283,6 +283,7 @@ async function afterHostAction(fetchQueue = false) {
     state._pollTime = Date.now();
     const trackChanged = state.item?.uri !== prevTrackUri;
     lastState = state;
+    syncEngine.updateLocalRef(state.progress_ms, state.is_playing);
     prevTrackUri = state.item?.uri;
     prevIsPlaying = state.is_playing;
     chrome.runtime.sendMessage({ action: 'jam-broadcast-state', data: state }).catch(() => {});
@@ -374,6 +375,7 @@ async function doPoll() {
     const state = await spotify.getPlayerState();
     if (state) state._pollTime = Date.now();
     lastState = state;
+    if (state) syncEngine.updateLocalRef(state.progress_ms, state.is_playing);
 
     if (jamRole === 'host' && state) {
       const curUri = state.item?.uri;
@@ -789,6 +791,7 @@ async function handlePortMessage(msg, port) {
         await analytics.flush();
         await spotify.logout();
         lastState = null;
+        syncEngine.clearHostRef();
         lastHistory = null;
         lastHistoryTime = 0;
         lastPlaylists = null;

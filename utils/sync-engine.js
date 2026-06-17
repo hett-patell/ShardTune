@@ -12,6 +12,7 @@ const MAX_THRESHOLD = 4500;
 const CONSECUTIVE_REQUIRED = 3;
 
 let hostRef = null;
+let localRef = null;       // continuously estimated local playback position
 let rttBuffer = [];
 let driftBuffer = [];
 let consecutiveDrift = 0;
@@ -54,18 +55,41 @@ export function clearHostRef() {
   hostRef = null;
 }
 
+// --- Local Playback Reference ---
+// Continuously estimated local position. Updated whenever Spotify polling
+// returns fresh state. Between polls, we interpolate by adding elapsed time.
+
+export function updateLocalRef(progressMs, isPlaying) {
+  localRef = {
+    progressMs: progressMs || 0,
+    timestamp: Date.now(),
+    isPlaying: isPlaying || false
+  };
+}
+
+export function getEstimatedLocalPosition() {
+  if (!localRef) return 0;
+  if (!localRef.isPlaying) return localRef.progressMs;
+  const elapsed = Date.now() - localRef.timestamp;
+  return localRef.progressMs + elapsed;
+}
+
 // --- Prediction ---
+// Includes RTT compensation: host snapshots are already old when they arrive.
+// avgRtt/2 estimates one-way latency to better predict where the host is now.
 
 export function predictPosition() {
   if (!hostRef) return 0;
   const elapsed = Math.min(Date.now() - hostRef.timestamp, MAX_PREDICTION_AGE);
-  return hostRef.positionMs + elapsed + manualOffset;
+  const { avg } = getLatency();
+  const rttCompensation = Math.round(avg / 2);
+  return hostRef.positionMs + elapsed + rttCompensation + manualOffset;
 }
 
 // --- Drift ---
 
-export function calculateDrift(localProgressMs) {
-  return predictPosition() - localProgressMs;
+export function calculateDrift() {
+  return predictPosition() - getEstimatedLocalPosition();
 }
 
 export function getDynamicThreshold() {
@@ -101,14 +125,17 @@ export function applyCorrection(seekTo) {
 }
 
 // --- Core Tick (called every 500ms by background.js) ---
+// No arguments — uses internal hostRef and localRef for live comparison.
 
-export function tick(localProgressMs) {
+export function tick() {
   if (!hostRef || !hostRef.isPlaying) return null;
+  if (!localRef) return null;
   if (transitionLock) return null;
   if (Date.now() - hostRef.timestamp > MAX_PREDICTION_AGE) return null;
 
   const predicted = predictPosition();
-  const drift = predicted - localProgressMs;
+  const estimatedLocal = getEstimatedLocalPosition();
+  const drift = predicted - estimatedLocal;
   const absDrift = Math.abs(drift);
 
   driftBuffer.push(absDrift);
@@ -159,7 +186,7 @@ export async function saveManualOffset(ms) {
 
 export function getSyncStatus() {
   const latency = getLatency();
-  const drift = hostRef ? Math.abs(calculateDrift(0)) : 0;
+  const drift = hostRef && localRef ? Math.abs(calculateDrift()) : 0;
   return {
     latency: latency.avg,
     jitter: latency.jitter,
@@ -175,6 +202,7 @@ export function getSyncStatus() {
 
 export function reset() {
   hostRef = null;
+  localRef = null;
   rttBuffer = [];
   driftBuffer = [];
   consecutiveDrift = 0;
