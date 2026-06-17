@@ -401,9 +401,14 @@ function renderSearchResults(data) {
     el.addEventListener('click', e => {
       if (e.target.closest('.search-action-btn')) return;
       const uri = el.dataset.uri;
+      const type = el.dataset.type;
       if (!uri) return;
-      // Play the track
-      send({ action: 'play', uris: [uri] });
+      // Play based on type - artists need context_uri
+      if (type === 'artist') {
+        send({ action: 'play', contextUri: uri });
+      } else {
+        send({ action: 'play', uris: [uri] });
+      }
       searchInput.value = '';
       searchResults.classList.add('hidden');
       els.iconPlay.classList.add('hidden');
