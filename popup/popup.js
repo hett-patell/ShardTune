@@ -133,6 +133,11 @@ const els = {
   jamSyncStatus: $('jam-sync-status'),
   jamOffsetSlider: $('jam-offset-slider'),
   jamOffsetValue: $('jam-offset-value'),
+  jamBar: $('jam-bar'),
+  jamBarLabel: $('jam-bar-label'),
+  jamBarRoom: $('jam-bar-room'),
+  jamBarStatus: $('jam-bar-status'),
+  jamBarLeave: $('jam-bar-leave'),
 };
 
 let currentState = null;
@@ -1304,6 +1309,7 @@ function handleMessage(msg) {
         const labels = { CONNECTING: 'Connecting...', SYNCING: 'Syncing...', SYNCED: 'Synced', RECONNECTING: 'Reconnecting...' };
         els.jamSyncStatus.textContent = labels[state] || state || 'Synced';
       }
+      updateJamBar();
       break;
     }
     case 'jam-sync-detail': {
@@ -1390,6 +1396,27 @@ els.jamOffsetSlider?.addEventListener('input', () => {
   send({ action: 'jam-set-offset', data: { offset: ms } });
 });
 
+// Jam bar in player screen
+els.jamBar?.addEventListener('click', (e) => {
+  if (e.target === els.jamBarLeave || els.jamBarLeave.contains(e.target)) return;
+  els.playerScreen.classList.add('hidden');
+  els.jamScreen.classList.remove('hidden');
+  send({ action: 'jam-get-state' });
+});
+
+els.jamBarLeave?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  send({ action: 'jam-leave' });
+});
+
+els.jamBarRoom?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (els.jamBarRoom.textContent) {
+    navigator.clipboard.writeText(els.jamBarRoom.textContent);
+    showToast('Room code copied');
+  }
+});
+
 function showJamState(state) {
   els.jamIdle.classList.add('hidden');
   els.jamHost.classList.add('hidden');
@@ -1415,7 +1442,26 @@ function renderJamPeers(peers, listEl) {
 }
 
 function updateJamButton() {
-  els.jamBtn.classList.toggle('active', jamState?.active === true);
+  const active = jamState?.active === true;
+  els.jamBtn.classList.toggle('active', active);
+  updateJamBar();
+}
+
+function updateJamBar() {
+  if (!jamState?.active) {
+    els.jamBar.classList.add('hidden');
+    return;
+  }
+  els.jamBar.classList.remove('hidden');
+  if (jamState.role === 'host') {
+    els.jamBarLabel.textContent = 'Hosting';
+    els.jamBarRoom.textContent = jamState.roomCode || '';
+    els.jamBarStatus.textContent = `${jamState.peers?.length || 1} listening`;
+  } else {
+    els.jamBarLabel.textContent = 'Jamming';
+    els.jamBarRoom.textContent = jamState.roomCode || '';
+    els.jamBarStatus.textContent = els.jamSyncStatus?.textContent || 'Synced';
+  }
 }
 
 function renderJamQueue(tracks) {
