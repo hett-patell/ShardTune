@@ -120,11 +120,18 @@
 
     <!-- Jam Session Bar (visible when Jam is active) -->
     <div id="jam-bar" class="jam-bar hidden">
-      <div class="jam-bar-dot"></div>
-      <span id="jam-bar-label" class="jam-bar-label">Jam Session</span>
-      <span id="jam-bar-room" class="jam-bar-room" title="Click to copy"></span>
-      <span id="jam-bar-status" class="jam-bar-status"></span>
-      <button id="jam-bar-leave" class="jam-bar-leave" title="Leave session">&times;</button>
+      <div class="jam-bar-left">
+        <div class="jam-bar-dot"></div>
+        <span id="jam-bar-label" class="jam-bar-label">Jam Session</span>
+      </div>
+      <div class="jam-bar-center">
+        <span id="jam-bar-room" class="jam-bar-room" title="Click to copy"></span>
+        <span class="jam-bar-sep">&middot;</span>
+        <span id="jam-bar-status" class="jam-bar-status"></span>
+      </div>
+      <button id="jam-bar-leave" class="jam-bar-leave" title="Leave session">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" width="10" height="10"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+      </button>
     </div>
 
     <!-- Scrollable Content -->
@@ -407,7 +414,7 @@
             <path d="M10 3L5 8l5 5"/>
           </svg>
         </div>
-        <span class="brand">JAM</span>
+        <span class="brand">JAM SESSION</span>
       </div>
     </div>
 
@@ -416,41 +423,56 @@
       <!-- Idle: Create or Join -->
       <div id="jam-idle" class="jam-state">
         <div class="jam-hero">
-          <svg viewBox="0 0 48 48" fill="none" class="jam-hero-icon">
-            <circle cx="17" cy="24" r="12" stroke="#1db954" stroke-width="2"/>
-            <circle cx="31" cy="24" r="12" stroke="#1db954" stroke-width="2"/>
-          </svg>
-          <div class="jam-hero-title">Jam Session</div>
-          <div class="jam-hero-desc">Listen together in real-time with friends</div>
+          <div class="jam-hero-rings">
+            <div class="jam-ring jam-ring-1"></div>
+            <div class="jam-ring jam-ring-2"></div>
+            <div class="jam-ring jam-ring-3"></div>
+            <svg viewBox="0 0 24 24" fill="none" class="jam-hero-icon-inner" width="32" height="32">
+              <circle cx="8.5" cy="12" r="5" stroke="#1db954" stroke-width="1.5"/>
+              <circle cx="15.5" cy="12" r="5" stroke="#1db954" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <div class="jam-hero-title">Listen Together</div>
+          <div class="jam-hero-desc">Sync playback in real-time with friends</div>
         </div>
 
         <div class="jam-section">
-          <button id="jam-create-btn" class="jam-action-btn">Create Session</button>
+          <button id="jam-create-btn" class="jam-action-btn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><circle cx="8" cy="8" r="6"/><path d="M8 5v6M5 8h6"/></svg>
+            Create Session
+          </button>
         </div>
 
-        <div class="jam-or">or join an existing session</div>
+        <div class="jam-divider">
+          <div class="jam-divider-line"></div>
+          <span class="jam-divider-text">or join</span>
+          <div class="jam-divider-line"></div>
+        </div>
 
         <div class="jam-section">
           <div class="jam-join-row">
-            <input id="jam-code-input" class="jam-code-input" type="text" placeholder="Room code" maxlength="6" spellcheck="false" autocomplete="off">
-            <button id="jam-join-btn" class="jam-join-btn">Join</button>
+            <input id="jam-code-input" class="jam-code-input" type="text" placeholder="ROOM CODE" maxlength="6" spellcheck="false" autocomplete="off">
+            <button id="jam-join-btn" class="jam-join-btn">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path d="M6 2l5 6-5 6"/></svg>
+            </button>
           </div>
         </div>
       </div>
 
       <!-- Host View -->
       <div id="jam-host" class="jam-state hidden">
-        <div class="jam-section">
-          <div class="jam-status-badge">
-            <div class="jam-status-dot"></div>
-            <span>Hosting</span>
+        <div class="jam-live-card">
+          <div class="jam-live-header">
+            <div class="jam-status-badge">
+              <div class="jam-status-dot"></div>
+              <span>HOSTING</span>
+            </div>
           </div>
-        </div>
-
-        <div class="jam-section jam-code-section">
-          <div class="jam-code-label">Room Code</div>
-          <div id="jam-room-code" class="jam-room-code" title="Click to copy"></div>
-          <div class="jam-code-hint">Tap to copy · Share with friends</div>
+          <div class="jam-code-display">
+            <div class="jam-code-label">Room Code</div>
+            <div id="jam-room-code" class="jam-room-code" title="Click to copy"></div>
+            <div class="jam-code-hint">Tap to copy</div>
+          </div>
         </div>
 
         <div class="jam-section">
@@ -458,17 +480,19 @@
           <div id="jam-peer-list" class="jam-peer-list"></div>
         </div>
 
-        <div class="jam-section">
+        <div class="jam-section jam-bottom-action">
           <button id="jam-end-btn" class="jam-end-btn">End Session</button>
         </div>
       </div>
 
       <!-- Guest View -->
       <div id="jam-guest" class="jam-state hidden">
-        <div class="jam-section">
-          <div class="jam-status-badge">
-            <div class="jam-status-dot"></div>
-            <span id="jam-sync-status">Synced</span>
+        <div class="jam-live-card">
+          <div class="jam-live-header">
+            <div class="jam-status-badge">
+              <div class="jam-status-dot"></div>
+              <span id="jam-sync-status">Synced</span>
+            </div>
           </div>
         </div>
 
@@ -487,7 +511,7 @@
           <div id="jam-offset-value" class="jam-offset-value">Auto</div>
         </div>
 
-        <div class="jam-section">
+        <div class="jam-section jam-bottom-action">
           <button id="jam-leave-btn" class="jam-end-btn">Leave Session</button>
         </div>
       </div>
@@ -495,7 +519,9 @@
       <!-- Connecting -->
       <div id="jam-connecting" class="jam-state hidden">
         <div class="jam-hero">
-          <div class="jam-connecting-dots">
+          <div class="jam-connecting-anim">
+            <div class="jam-pulse-ring"></div>
+            <div class="jam-pulse-ring jam-pulse-ring-2"></div>
             <div class="jam-status-dot connecting"></div>
           </div>
           <div class="jam-hero-title">Connecting</div>

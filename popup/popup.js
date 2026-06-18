@@ -1287,6 +1287,7 @@ function handleMessage(msg) {
         jamState.peers = msg.data || [];
         const listEl = jamState.role === 'host' ? els.jamPeerList : els.jamGuestPeerList;
         renderJamPeers(jamState.peers, listEl);
+        updateJamBar();
       }
       break;
     case 'jam-peer-joined':
