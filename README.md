@@ -4,9 +4,9 @@
 
 # ShardTune
 
-**Spotify controller + listening analytics for your browser.**
+**the spotify controller you didn't know you needed.**
 
-Control playback, manage your queue, search tracks, track listening habits — without ever leaving your tab.
+control playback, manage your queue, search tracks, track your listening habits, and vibe with friends in real-time jam sessions — all without leaving your tab.
 
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-1db954?style=flat-square)
 ![Vanilla JS](https://img.shields.io/badge/Stack-Vanilla%20JS-f7df1e?style=flat-square)
@@ -18,61 +18,91 @@ Control playback, manage your queue, search tracks, track listening habits — w
 
 ---
 
-## Why ShardTune?
-
-Most Spotify extensions give you a play/pause button and call it a day. ShardTune gives you the full picture — playback control, queue management, search, playlists, friend activity, and a complete analytics dashboard — all running locally in your browser with zero external dependencies.
-
-No frameworks. No build step. No servers collecting your data. Just vanilla JS talking directly to the Spotify Web API.
-
-Works on **Chrome, Brave, Edge**, and any Chromium-based browser.
+> **heads up — this is a hobby project.** i build this in my free time because i wanted a better spotify experience in my browser. it works great for me, but no promises. things might break, APIs might change, and the jam feature is still experimental. if something goes wrong, open an issue and i'll get to it when i can. use at your own risk and have fun with it.
 
 ---
 
-## Features
+## why shardtune?
 
-### Playback Control
+most spotify extensions give you a play/pause button and call it a day. shardtune is the whole package — playback, queue, search, playlists, friend activity, jam sessions with your friends, and a full analytics dashboard. all running locally. zero servers. zero tracking.
 
-Full player controls right from the popup — no need to tab over to Spotify.
+no frameworks. no build step. no backend. just vanilla js talking to the spotify web api.
 
-- **Now Playing** — album art, live progress bar, waveform visualization
-- **Transport Controls** — play/pause, next/prev, shuffle, repeat (with visual repeat-one indicator)
-- **Volume Control** — with graceful handling for devices that don't support it
-- **Queue Management** — view and play upcoming tracks, auto-refreshes on track change
-- **Search** — find and play tracks or artists directly from the popup
-- **Add to Queue** — queue any search result with one click
-- **Like/Save** — save tracks to your library instantly
-- **Playlists** — browse and play your playlists without leaving the popup
-- **Device Switching** — move playback between Spotify Connect devices
-- **Copy Track Link** — one-click copy to clipboard
-- **Sleep Timer** — 15/30/45/60 min presets or custom duration (up to 8 hours), with live countdown badge
-- **Session Stats** — minutes listened, skips, unique artists, day streak
+works on **Chrome, Brave, Edge**, and basically any chromium browser.
 
-### Analytics Dashboard
+---
 
-A full-page dashboard that breaks down your listening habits. All data is computed locally.
+## two flavors
 
-- **Session Waveform** — energy curve of your current listening session
-- **Peak Hours** — discover when you listen most across a 24-hour breakdown
-- **Music Memory** — 7-day x 24-hour grid of your listening patterns
-- **Session Vibe** — mood and energy analysis for your current session
-- **Taste Profile** — energy, popularity, and variety metrics from your top tracks
-- **Library Stats** — liked songs count, unique artists, recent additions
-- **Top Artists & Tracks** — your most-played music with rankings
-- **Listening Log** — chronological history of recently played tracks
-- **Album Mosaic** — visual grid of your recent albums
-- **Friend Activity** — see what friends are playing in real time
-- **Vibe Sync** — compare your music taste with friends using multi-factor matching
-- **Share Card** — export your stats as a shareable PNG
-- **Export JSON** — download raw analytics data for backup or your own analysis
+| | **ShardTune** | **ShardTune Beta** |
+|---|---|---|
+| Branch | `main` | `beta` |
+| Vibe | stable, just works | bleeding edge, has jam |
+| Jam Sessions | nope | yep (P2P, experimental) |
+| Updates | stable releases only | pre-releases |
 
-### Smart Notifications
+want the safe experience? stick with `main`. want to listen with friends and don't mind the occasional rough edge? grab `beta`.
 
-- **Liked Song Alerts** — notifies you when a saved track comes on during shuffle
-- **Friend Activity** — heads up when someone you follow starts playing
-- **Focus Reminders** — gentle nudge after extended listening sessions
-- **Fully Configurable** — toggle each notification type independently in Settings
+---
 
-### Keyboard Shortcuts
+## features
+
+### playback control
+
+full player controls right from the popup — no spotify tab-switching needed.
+
+- **now playing** — album art, live progress bar, waveform visualization
+- **transport controls** — play/pause, next/prev, shuffle, repeat
+- **volume control** — with graceful handling for devices that don't support it
+- **queue management** — view and play upcoming tracks, auto-refreshes on track change
+- **search** — find and play tracks or artists directly from the popup
+- **add to queue** — queue any search result with one click
+- **like/save** — save tracks to your library instantly
+- **playlists** — browse and play your playlists without leaving the popup
+- **device switching** — move playback between spotify connect devices
+- **copy track link** — one-click copy to clipboard
+- **sleep timer** — 15/30/45/60 min presets or custom (up to 8h), with live countdown
+- **session stats** — minutes listened, skips, unique artists, day streak
+
+### jam sessions (beta only)
+
+listen to spotify in sync with friends over P2P. no server, no middleman — just vibes.
+
+- **host a room** — create a session, share the code
+- **join a friend** — enter their code and you're in
+- **real-time sync** — adaptive sync engine with RTT compensation
+- **guest controls** — guests can play/pause/skip/queue through the host
+- **peer list** — see who's in the session
+- **manual offset** — fine-tune sync if your connection is weird
+
+> **fair warning:** jam is experimental. it uses WebRTC via Trystero over Nostr relays. it works surprisingly well most of the time, but P2P is P2P — sometimes connections drop, sometimes sync drifts, sometimes the relay is having a bad day. if it breaks, just rejoin. i'm actively improving it.
+
+### analytics dashboard
+
+a full-page dashboard that breaks down your listening habits. all data computed locally.
+
+- **session waveform** — energy curve of your current listening session
+- **peak hours** — when you listen most across a 24h breakdown
+- **music memory** — 7-day x 24-hour grid of your listening patterns
+- **session vibe** — mood and energy analysis for your current session
+- **taste profile** — energy, popularity, and variety metrics from your top tracks
+- **library stats** — liked songs, unique artists, recent additions
+- **top artists & tracks** — your most-played music
+- **listening log** — chronological history of recently played tracks
+- **album mosaic** — visual grid of your recent albums
+- **friend activity** — see what friends are playing in real time
+- **vibe sync** — compare your music taste with friends
+- **share card** — export your stats as a shareable PNG
+- **export json** — download raw data for your own analysis
+
+### smart notifications
+
+- **liked song alerts** — notifies you when a saved track comes on during shuffle
+- **friend activity** — heads up when someone you follow starts playing
+- **focus reminders** — gentle nudge after extended listening sessions
+- **fully configurable** — toggle each type independently in settings
+
+### keyboard shortcuts
 
 | Action | Shortcut |
 |--------|----------|
@@ -80,103 +110,125 @@ A full-page dashboard that breaks down your listening habits. All data is comput
 | Next Track | `Alt + Shift + Right` |
 | Previous Track | `Alt + Shift + Left` |
 
-Customize these at `chrome://extensions/shortcuts`.
+customize at `chrome://extensions/shortcuts`.
 
 ---
 
-## Getting Started
+## getting started
 
-ShardTune uses a **BYO-Client-ID** model — you register your own Spotify app and keep full control of your credentials. No middleman server, no telemetry.
+shardtune uses a **BYO-Client-ID** model — you register your own spotify app and keep full control of your credentials. no middleman, no telemetry.
 
-> **Heads up:** Playback control (play/pause/skip/volume) requires **Spotify Premium**. That's a Spotify API restriction, not ours. Free accounts can still view now-playing info and analytics.
+> **note:** playback control (play/pause/skip/volume) requires **Spotify Premium**. that's a spotify API restriction, not ours. free accounts can still view now-playing info and analytics.
 
-### 1. Create a Spotify App
+### 1. create a spotify app
 
-1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Click **Create App**
-3. Name it whatever you want (e.g., `ShardTune`)
-4. Add this **Redirect URI**:
+1. go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+2. click **Create App**
+3. name it whatever (e.g., `ShardTune`)
+4. add this **Redirect URI**:
    ```
    http://127.0.0.1:43827/spotify/callback
    ```
-5. Save and copy your **Client ID**
+5. save and copy your **Client ID**
 
-### 2. Install the Extension
+### 2. install the extension
 
+**stable:**
 ```bash
 git clone https://github.com/hett-patell/ShardTune.git
 ```
 
-1. Open `chrome://extensions` (or `brave://extensions`)
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** and select the `ShardTune` folder
-4. Pin the extension to your toolbar
+**beta (with jam sessions):**
+```bash
+git clone -b beta https://github.com/hett-patell/ShardTune.git
+```
 
-### 3. Connect Spotify
+then:
+1. open `chrome://extensions` (or `brave://extensions`)
+2. enable **Developer mode** (top right)
+3. click **Load unpacked** and select the `ShardTune` folder
+4. pin the extension to your toolbar
 
-1. Click the ShardTune icon in your toolbar
-2. Paste your **Client ID** and hit **Save**
-3. Click **Connect Spotify** and authorize
-4. You're in
+### 3. connect spotify
+
+1. click the ShardTune icon in your toolbar
+2. paste your **Client ID** and hit **Save**
+3. click **Connect Spotify** and authorize
+4. you're in
 
 ---
 
-## How It Works
+## how it works
 
 ```
 popup / dashboard  <──port──>  service worker (MV3)  <──Web API──>  Spotify
                                     |
                              chrome.storage.local
                                     |
-                   content scripts on open.spotify.com (friend activity)
+                   content scripts on open.spotify.com (token + friends)
 ```
 
-- **Auth** — OAuth 2.0 PKCE with loopback redirect. Tokens stored locally, refreshed with a mutex to prevent stampede.
-- **Polling** — Single-flight polling with fast interval when the popup is open, durable alarm fallback for service worker eviction. Respects `429 Retry-After`.
-- **Analytics** — 100% local computation. Peak hours, music memory, and streaks persist through write-through caching so MV3 worker eviction doesn't lose data.
-- **Energy Proxy** — Spotify deprecated audio-features for new apps, so ShardTune uses a deterministic proxy based on popularity, duration, and explicitness.
+**beta only:**
+```
+popup  <──port──>  service worker  <──messages──>  offscreen document (WebRTC)
+                                                        |
+                                                   Trystero / Nostr relays
+                                                        |
+                                                   other peers (P2P)
+```
+
+- **auth** — OAuth 2.0 PKCE with loopback redirect. tokens stored locally, refreshed with mutex.
+- **polling** — single-flight with fast interval when popup is open, durable alarm fallback for MV3 worker eviction. respects `429 Retry-After`.
+- **analytics** — 100% local. peak hours, music memory, and streaks persist through write-through caching.
+- **energy proxy** — spotify deprecated audio-features for new apps, so shardtune uses a deterministic proxy based on popularity, duration, and explicitness.
+- **jam sync** — adaptive prediction loop with RTT measurement, drift detection, and transition locks to prevent audio glitches.
 
 ---
 
-## Privacy
+## privacy
 
-Your data **never leaves your device**. No analytics servers, no tracking pixels, no third-party scripts. Everything lives in `chrome.storage.local`. One-click "Clear Analytics" in Settings wipes it all.
+your data **never leaves your device**. no analytics servers, no tracking pixels, no third-party scripts. everything lives in `chrome.storage.local`. one-click "Clear Analytics" in settings wipes it all.
+
+jam sessions are peer-to-peer — audio goes through spotify, sync messages go through public Nostr relays. no data touches my servers because i don't have servers.
 
 ---
 
-## Tech Stack
+## tech stack
 
 | | |
 |---|---|
 | **Runtime** | Chromium Manifest V3 |
 | **Language** | Vanilla JavaScript (ES modules) |
 | **API** | Spotify Web API |
-| **Dependencies** | Zero |
+| **P2P** | Trystero (Nostr relays + WebRTC) |
+| **Dependencies** | Trystero only (bundled, beta branch) |
 | **Build step** | None |
 | **Storage** | chrome.storage.local |
 
 ---
 
-## Browser Support
+## browser support
 
 | Browser | Status |
 |---------|--------|
-| Brave | Primary, recommended |
-| Chrome | Fully supported |
-| Edge | Fully supported |
-| Any Chromium | Should work |
+| Brave | primary, recommended |
+| Chrome | fully supported |
+| Edge | fully supported |
+| Any Chromium | should work |
 
 ---
 
-## Disclaimer
+## disclaimer
 
-- Not affiliated with, endorsed by, or sponsored by Spotify.
-- Friend Activity and Vibe Sync use an unofficial Spotify endpoint that may break without notice.
-- Playback control requires Spotify Premium (Spotify API restriction).
+- not affiliated with, endorsed by, or sponsored by Spotify.
+- friend activity and vibe sync use an unofficial spotify endpoint that may break without notice.
+- playback control requires Spotify Premium (spotify API restriction).
+- jam sessions are experimental and rely on public Nostr relays — availability not guaranteed.
+- this is a hobby project. i do my best but there are no warranties.
 
 ---
 
-## Links
+## links
 
 | | |
 |---|---|
