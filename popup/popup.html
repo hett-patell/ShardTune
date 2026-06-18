@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Apply saved theme before first paint to avoid a flash of the default look -->
+  <script>
+    try {
+      chrome.storage.local.get('theme', r => {
+        document.documentElement.dataset.theme = r.theme || 'default';
+      });
+    } catch (e) { document.documentElement.dataset.theme = 'default'; }
+  </script>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -277,6 +285,61 @@
     </div>
 
     <div class="settings-scroll">
+
+      <!-- Appearance -->
+      <div class="s-section">
+        <div class="s-head">Appearance</div>
+        <div class="theme-grid">
+          <div class="theme-card" id="theme-default" data-theme-value="default">
+            <div class="theme-swatch">
+              <i style="background:#0c0c0d"></i><i style="background:#1db954"></i><i style="background:#f4f4f5"></i>
+            </div>
+            <div class="theme-card-info">
+              <div class="theme-card-name">Default</div>
+              <div class="theme-card-desc">dark · green</div>
+            </div>
+            <span class="theme-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.5 3.5L13 4"/></svg>
+            </span>
+          </div>
+          <div class="theme-card" id="theme-editorial-light" data-theme-value="editorial-light">
+            <div class="theme-swatch">
+              <i style="background:#f4efe7"></i><i style="background:#22211e"></i><i style="background:#9a6452"></i>
+            </div>
+            <div class="theme-card-info">
+              <div class="theme-card-name">Editorial Light</div>
+              <div class="theme-card-desc">cream · serif</div>
+            </div>
+            <span class="theme-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.5 3.5L13 4"/></svg>
+            </span>
+          </div>
+          <div class="theme-card" id="theme-editorial-dark" data-theme-value="editorial-dark">
+            <div class="theme-swatch">
+              <i style="background:#16130f"></i><i style="background:#ece6da"></i><i style="background:#b07a64"></i>
+            </div>
+            <div class="theme-card-info">
+              <div class="theme-card-name">Editorial Dark</div>
+              <div class="theme-card-desc">ink · serif</div>
+            </div>
+            <span class="theme-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.5 3.5L13 4"/></svg>
+            </span>
+          </div>
+          <div class="theme-card" id="theme-terminal" data-theme-value="terminal">
+            <div class="theme-swatch">
+              <i style="background:#0e0e10"></i><i style="background:#cdcabf"></i><i style="background:#8a877d"></i>
+            </div>
+            <div class="theme-card-info">
+              <div class="theme-card-name">Terminal</div>
+              <div class="theme-card-desc">mono · greyscale</div>
+            </div>
+            <span class="theme-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.5 3.5L13 4"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
 
       <!-- Notifications -->
       <div class="s-section">

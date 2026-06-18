@@ -115,6 +115,7 @@ const els = {
   sCheckUpdate: $('s-check-update'),
   updateStatus: $('update-status'),
   sAboutVer: $('s-about-ver'),
+  themeCards: Array.from(document.querySelectorAll('.theme-card')),
 };
 
 let currentState = null;
@@ -157,6 +158,30 @@ chrome.storage.local.get('displayName', r => {
     userName = r.displayName;
     updateGreeting();
   }
+});
+
+// --- Themes ---
+
+const VALID_THEMES = ['default', 'editorial-light', 'editorial-dark', 'terminal'];
+
+function applyTheme(theme) {
+  const value = VALID_THEMES.includes(theme) ? theme : 'default';
+  document.documentElement.dataset.theme = value;
+  els.themeCards.forEach(card => {
+    card.classList.toggle('active', card.dataset.themeValue === value);
+  });
+}
+
+// Reflect the stored theme on boot (the head script already painted it; this
+// just syncs the picker's active state and guards against an invalid value).
+chrome.storage.local.get('theme', r => applyTheme(r.theme || 'default'));
+
+els.themeCards.forEach(card => {
+  card.addEventListener('click', () => {
+    const value = card.dataset.themeValue;
+    chrome.storage.local.set({ theme: value });
+    applyTheme(value);
+  });
 });
 
 // Decide the initial screen from the stored session so the popup doesn't flash

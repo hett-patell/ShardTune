@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&display=swap");
 
 :root {
   --bg: #08080a;
@@ -27,6 +27,104 @@
 
   --font-ui: 'Inter Tight', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
+  --font-display: 'Inter Tight', system-ui, sans-serif;
+
+  /* Accent wash + data-viz base (themed). RGB triple feeds rgba() in JS. */
+  --accent-wash: rgba(29,185,84,0.02);
+  --data-rgb: 29,185,84;
+}
+
+/* ============================================
+   THEMES — token overrides keyed on <html data-theme>
+   Mirrors the popup's theme system. Extra data-viz
+   accents (amber/purple/cyan/red) collapse to the
+   restrained palette so charts stay on-theme.
+   ============================================ */
+
+html[data-theme="editorial-light"] {
+  --bg: #f4efe7;
+  --surface: #ece6da;
+  --elevated: #e7e0d4;
+  --border: rgba(34,33,30,0.13);
+  --border-hover: rgba(34,33,30,0.28);
+  --border-active: rgba(34,33,30,0.45);
+
+  --fg: #22211e;
+  --fg-muted: #736d62;
+  --fg-faint: #a8a294;
+
+  --green: #22211e;
+  --green-dim: rgba(34,33,30,0.08);
+  --green-glow: 0 0 0 transparent;
+
+  --amber: #9a6452;
+  --amber-dim: rgba(154,100,82,0.10);
+  --purple: #6b6358;
+  --cyan: #7d7a3f;
+  --red: #a23b2b;
+
+  --accent-wash: rgba(34,33,30,0.03);
+  --data-rgb: 125,122,63;   /* muted olive for heatmaps/charts */
+
+  --font-display: 'Fraunces', Georgia, serif;
+}
+
+html[data-theme="editorial-dark"] {
+  --bg: #16130f;
+  --surface: #1e1a14;
+  --elevated: #241f18;
+  --border: rgba(236,230,218,0.13);
+  --border-hover: rgba(236,230,218,0.28);
+  --border-active: rgba(236,230,218,0.45);
+
+  --fg: #ece6da;
+  --fg-muted: #9a9182;
+  --fg-faint: #5c564a;
+
+  --green: #ece6da;
+  --green-dim: rgba(236,230,218,0.10);
+  --green-glow: 0 0 0 transparent;
+
+  --amber: #b07a64;
+  --amber-dim: rgba(176,122,100,0.12);
+  --purple: #9a9182;
+  --cyan: #b8b35a;
+  --red: #d4715c;
+
+  --accent-wash: rgba(236,230,218,0.03);
+  --data-rgb: 184,179,90;   /* muted ochre for heatmaps/charts */
+
+  --font-display: 'Fraunces', Georgia, serif;
+}
+
+html[data-theme="terminal"] {
+  --bg: #0e0e10;
+  --surface: #16161a;
+  --elevated: #1c1c20;
+  --border: rgba(205,202,191,0.16);
+  --border-hover: rgba(205,202,191,0.30);
+  --border-active: rgba(205,202,191,0.45);
+
+  --fg: #cdcabf;
+  --fg-muted: #8a877d;
+  --fg-faint: #56544d;
+
+  --green: #f0ede4;
+  --green-dim: rgba(205,202,191,0.10);
+  --green-glow: 0 0 0 transparent;
+
+  --amber: #c2b486;
+  --amber-dim: rgba(194,180,134,0.10);
+  --purple: #8a877d;
+  --cyan: #b6c2a0;
+  --red: #c98a72;
+
+  --accent-wash: rgba(205,202,191,0.03);
+  --data-rgb: 205,202,191;   /* greyscale for heatmaps/charts */
+
+  --radius: 0px;
+  --font-ui: 'IBM Plex Mono', monospace;
+  --font-display: 'IBM Plex Mono', monospace;
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -126,7 +224,7 @@ body {
 
 .hero {
   position: relative;
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(29,185,84,0.02) 100%);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--accent-wash) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px 24px;
@@ -145,7 +243,7 @@ body {
   right: 0;
   width: 40%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(29,185,84,0.02));
+  background: linear-gradient(90deg, transparent, var(--accent-wash));
   pointer-events: none;
 }
 
@@ -1401,3 +1499,32 @@ body {
   .hero-stats { justify-content: center; }
   .dash-header { flex-direction: column; gap: 12px; }
 }
+
+/* ============================================
+   PER-THEME COMPONENT OVERRIDES
+   ============================================ */
+
+/* Editorial: serif display type for brand, hero track & panel titles */
+html[data-theme="editorial-light"] .dash-brand,
+html[data-theme="editorial-dark"] .dash-brand,
+html[data-theme="editorial-light"] .brand-large,
+html[data-theme="editorial-dark"] .brand-large,
+html[data-theme="editorial-light"] .hero-track,
+html[data-theme="editorial-dark"] .hero-track {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+html[data-theme="editorial-light"] .panel-title,
+html[data-theme="editorial-dark"] .panel-title {
+  font-family: var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Terminal: uppercase mono headings */
+html[data-theme="terminal"] .dash-brand,
+html[data-theme="terminal"] .brand-large { letter-spacing: 0.18em; }
+html[data-theme="terminal"] .panel-title { text-transform: uppercase; letter-spacing: 0.14em; }
+html[data-theme="terminal"] .rank-art,
+html[data-theme="terminal"] .rank-art.round { border-radius: 0; }

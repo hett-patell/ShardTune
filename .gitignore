@@ -2,6 +2,7 @@
 .claude/
 .remember/
 .superpowers/
+.playwright-mcp/
 
 # Scratch / dev artifacts
 theme-demo.html
