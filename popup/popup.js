@@ -210,7 +210,9 @@ els.openSpotifyDev.addEventListener('click', () => {
 });
 
 send({ action: 'check-client-id' });
-els.sAboutVer.textContent = `v${chrome.runtime.getManifest().version}`;
+const manifest = chrome.runtime.getManifest();
+const channelLabel = manifest.update_channel === 'beta' ? ' · beta' : '';
+els.sAboutVer.textContent = `v${manifest.version}${channelLabel}`;
 
 els.saveIdBtn.addEventListener('click', () => {
   const id = els.clientIdInput.value.trim();
