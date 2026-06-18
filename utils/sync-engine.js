@@ -193,5 +193,6 @@ export function reset() {
   consecutiveDrift = 0;
   lastCorrectionAt = 0;
   transitionLock = false;
+  manualOffset = 0;
   if (transitionTimer) { clearTimeout(transitionTimer); transitionTimer = null; }
 }

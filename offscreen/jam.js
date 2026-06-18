@@ -319,7 +319,9 @@ function attemptReconnect() {
   sendToBg({ action: 'jam-reconnecting', attempt: reconnectAttempts, maxAttempts: MAX_RECONNECT });
   reconnectTimer = setTimeout(() => {
     lastSnapshotSeq = -1;
+    stopHeartbeat();
     initRoom();
+    startHeartbeat();
   }, delay);
 }
 
@@ -362,7 +364,6 @@ function handleJoin(code, name) {
   sessionId = generateId();
   lastSnapshotSeq = -1;
   reconnectAttempts = 0;
-  guestState = 'CONNECTING';
 
   initRoom();
   startHeartbeat();

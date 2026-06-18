@@ -46,8 +46,11 @@ async function ensureOffscreenDocument() {
     reasons: [chrome.offscreen.Reason.WEB_RTC],
     justification: 'WebRTC peer connections for real-time listening sessions'
   });
-  await creatingOffscreen;
-  creatingOffscreen = null;
+  try {
+    await creatingOffscreen;
+  } finally {
+    creatingOffscreen = null;
+  }
 }
 
 async function closeOffscreenDocument() {
@@ -204,48 +207,44 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 let guestCooldownUntil = 0;
 
 function applyGuestSnapshot(host) {
+  if (jamApplying) {
+    pendingSnapshot = host;
+    return;
+  }
   jamApplying = true;
   (async () => {
-    try {
-      if (Date.now() < rateLimitedUntil) return;
-      if (Date.now() < guestCooldownUntil) return;
+    let current = host;
+    while (current) {
+      try {
+        if (Date.now() < rateLimitedUntil) break;
+        if (Date.now() < guestCooldownUntil) break;
 
-      const localUri = lastState?.item?.uri;
-      const localPlaying = lastState?.is_playing ?? false;
+        const localUri = lastState?.item?.uri;
+        const localPlaying = lastState?.is_playing ?? false;
 
-      // 1. Track change (highest priority) — single API call with position_ms
-      if (host.trackUri && host.trackUri !== localUri) {
-        syncEngine.enterTransitionLock();
-        const elapsed = Date.now() - (host.timestamp || Date.now());
-        const seekTo = Math.max(0, host.positionMs + elapsed);
-        await spotify.play(undefined, [host.trackUri], undefined, undefined, seekTo).catch(() => {});
-        syncEngine.updateHostRef(host);
-        syncEngine.updateLocalRef(seekTo, true);
-        guestCooldownUntil = Date.now() + 3000;
-        schedulePoll(1000);
-        return;
-      }
-
-      // 2. Play/pause consistency
-      if (host.isPlaying !== localPlaying) {
-        if (host.isPlaying) await spotify.play().catch(() => {});
-        else await spotify.pause().catch(() => {});
-        syncEngine.updateHostRef(host);
-        guestCooldownUntil = Date.now() + 1500;
-        schedulePoll(1000);
-        return;
-      }
-
-      // 3. Store hostRef for the prediction loop
-      syncEngine.updateHostRef(host);
-    } finally {
-      jamApplying = false;
-      if (pendingSnapshot) {
-        const next = pendingSnapshot;
-        pendingSnapshot = null;
-        applyGuestSnapshot(next);
-      }
+        if (current.trackUri && current.trackUri !== localUri) {
+          syncEngine.enterTransitionLock();
+          const elapsed = Date.now() - (current.timestamp || Date.now());
+          const seekTo = Math.max(0, current.positionMs + elapsed);
+          await spotify.play(undefined, [current.trackUri], undefined, undefined, seekTo).catch(() => {});
+          syncEngine.updateHostRef(current);
+          syncEngine.updateLocalRef(seekTo, true);
+          guestCooldownUntil = Date.now() + 3000;
+          schedulePoll(1000);
+        } else if (current.isPlaying !== localPlaying) {
+          if (current.isPlaying) await spotify.play().catch(() => {});
+          else await spotify.pause().catch(() => {});
+          syncEngine.updateHostRef(current);
+          guestCooldownUntil = Date.now() + 1500;
+          schedulePoll(1000);
+        } else {
+          syncEngine.updateHostRef(current);
+        }
+      } catch {}
+      current = pendingSnapshot;
+      pendingSnapshot = null;
     }
+    jamApplying = false;
   })();
 }
 
@@ -273,12 +272,18 @@ function stopSyncLoop() {
 }
 
 let afterHostTimer = null;
+let afterHostResolve = null;
 
 async function afterHostAction(fetchQueue = false) {
-  if (afterHostTimer) clearTimeout(afterHostTimer);
-  await new Promise((resolve) => {
-    afterHostTimer = setTimeout(() => { afterHostTimer = null; resolve(); }, 100);
+  if (afterHostTimer) {
+    clearTimeout(afterHostTimer);
+    if (afterHostResolve) afterHostResolve('cancelled');
+  }
+  const result = await new Promise((resolve) => {
+    afterHostResolve = resolve;
+    afterHostTimer = setTimeout(() => { afterHostTimer = null; afterHostResolve = null; resolve('go'); }, 100);
   });
+  if (result === 'cancelled') return;
   const state = await spotify.getPlayerState().catch(() => null);
   if (state) {
     state._pollTime = Date.now();
@@ -904,8 +909,13 @@ chrome.commands.onCommand.addListener(async command => {
     if (!token) return;
 
     if (jamRole === 'guest') {
-      const typeMap = { 'toggle-playback': lastState?.is_playing ? 'pause' : 'play', 'next-track': 'next', 'prev-track': 'previous' };
-      const type = typeMap[command];
+      let type;
+      if (command === 'toggle-playback') {
+        const fresh = lastState || await spotify.getPlayerState().catch(() => null);
+        type = fresh?.is_playing ? 'pause' : 'play';
+      } else {
+        type = { 'next-track': 'next', 'prev-track': 'previous' }[command];
+      }
       if (type) chrome.runtime.sendMessage({ action: 'jam-forward-request', data: { type } }).catch(() => {});
       return;
     }

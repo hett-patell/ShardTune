@@ -527,6 +527,8 @@ function showAuth() {
   els.settingsScreen.classList.add('hidden');
   els.jamScreen.classList.add('hidden');
   authenticated = false;
+  playerDataRequested = false;
+  shouldReconnect = true;
   stopProgressTimer();
 }
 

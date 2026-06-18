@@ -20,8 +20,9 @@ async function getLatestRelease(channel) {
     });
     if (!response.ok) throw new Error(`GitHub API error: ${response.status}`);
     const releases = await response.json();
-    if (!releases.length) throw new Error('No releases found');
-    return releases[0];
+    const betaRelease = releases.find(r => r.prerelease) || releases[0];
+    if (!betaRelease) throw new Error('No releases found');
+    return betaRelease;
   }
 
   const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
