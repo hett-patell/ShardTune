@@ -1315,8 +1315,9 @@ function handleMessage(msg) {
     case 'jam-sync-detail': {
       const d = msg.data;
       if (d && els.jamSyncStatus) {
+        const base = els.jamSyncStatus.textContent.replace(/\s*\(\d+ms\)$/, '');
         const latencyStr = d.latency ? ` (${d.latency}ms)` : '';
-        els.jamSyncStatus.textContent = `${els.jamSyncStatus.textContent}${latencyStr}`;
+        els.jamSyncStatus.textContent = `${base}${latencyStr}`;
       }
       break;
     }
@@ -1398,7 +1399,7 @@ els.jamOffsetSlider?.addEventListener('input', () => {
 
 // Jam bar in player screen
 els.jamBar?.addEventListener('click', (e) => {
-  if (e.target === els.jamBarLeave || els.jamBarLeave.contains(e.target)) return;
+  if (els.jamBarLeave && (e.target === els.jamBarLeave || els.jamBarLeave.contains(e.target))) return;
   els.playerScreen.classList.add('hidden');
   els.jamScreen.classList.remove('hidden');
   send({ action: 'jam-get-state' });

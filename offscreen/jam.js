@@ -192,6 +192,8 @@ function guestHandleSnapshot(snapshot) {
   });
 
   if (guestState === 'SYNCING' || guestState === 'RECONNECTING') {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempts = 0;
     setGuestState('SYNCED');
   }
 }

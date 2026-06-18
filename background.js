@@ -840,6 +840,8 @@ async function handlePortMessage(msg, port) {
         stopSyncLoop();
         jamActive = false;
         jamRole = null;
+        prevTrackUri = null;
+        prevIsPlaying = null;
         await closeOffscreenDocument();
         if (ports.size > 0) startFastPolling();
         broadcast({ type: 'jam-ended' });
@@ -945,10 +947,16 @@ startSlowPolling();
 
 chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(async contexts => {
   if (contexts.some(c => c.documentUrl?.includes('offscreen/jam.html'))) {
-    jamActive = true;
     try {
       const state = await chrome.runtime.sendMessage({ action: 'jam-get-state' });
-      if (state?.role) jamRole = state.role;
+      if (state?.role) {
+        jamActive = true;
+        jamRole = state.role;
+        if (jamRole === 'guest') {
+          syncEngine.loadManualOffset();
+          startSyncLoop();
+        }
+      }
     } catch {}
   }
 }).catch(() => {});
