@@ -74,7 +74,7 @@ chrome.runtime.onConnect.addListener(port => {
   ports.add(port);
   port.onDisconnect.addListener(() => {
     ports.delete(port);
-    if (ports.size === 0) {
+    if (ports.size === 0 && !jamActive) {
       stopFastPolling();
       startSlowPolling();
     }
@@ -185,6 +185,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       jamActive = false;
       jamRole = null;
       closeOffscreenDocument();
+      if (ports.size === 0) { stopFastPolling(); startSlowPolling(); }
       broadcast({ type: 'jam-ended', data: { reason: msg.data?.reason || 'Host ended the session' } });
       break;
     case 'jam-error':
@@ -194,6 +195,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       jamActive = false;
       jamRole = null;
       closeOffscreenDocument();
+      if (ports.size === 0) { stopFastPolling(); startSlowPolling(); }
       broadcast({ type: 'jam-ended' });
       break;
   }
@@ -428,7 +430,10 @@ async function doPoll() {
     broadcast({ type: 'analytics', data: { session, streak } });
 
     // Auto-downshift to slow polling when paused or no device active
-    if (!state || !state.is_playing) {
+    // Keep fast polling alive during jam sessions so state changes propagate
+    if (jamActive) {
+      pausedTicks = 0;
+    } else if (!state || !state.is_playing) {
       pausedTicks++;
       if (pausedTicks > 6) { // ~30 seconds idle
         stopFastPolling();
@@ -952,9 +957,19 @@ chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(async 
       if (state?.role) {
         jamActive = true;
         jamRole = state.role;
+        // Recover lastState so snapshot diffs (play/pause, track change) work
+        const playerState = await spotify.getPlayerState().catch(() => null);
+        if (playerState) {
+          playerState._pollTime = Date.now();
+          lastState = playerState;
+        }
         if (jamRole === 'guest') {
           syncEngine.loadManualOffset();
           startSyncLoop();
+        }
+        if (jamRole === 'host') {
+          prevTrackUri = playerState?.item?.uri || null;
+          prevIsPlaying = playerState?.is_playing ?? null;
         }
       }
     } catch {}

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ShardTune Beta",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "update_channel": "beta",
   "description": "Spotify desk controller + listening analytics",
   "permissions": ["storage", "alarms", "tabs", "notifications", "webNavigation", "offscreen"],
