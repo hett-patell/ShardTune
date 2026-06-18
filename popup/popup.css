@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&display=swap");
 
 :root {
   /* Surfaces — ShardPass graphite stack */
@@ -39,6 +39,114 @@
   --font-px: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
   --font-ui: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Display font — Default keeps the UI font; themes may swap to serif */
+  --font-display: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+  /* Accent wash — faint tint for hovers/active backgrounds (themed) */
+  --accent-rgb: 29,185,84;
+  --accent-wash: rgba(var(--accent-rgb),0.08);
+  --accent-wash-soft: rgba(var(--accent-rgb),0.04);
+}
+
+/* ============================================
+   THEMES — token overrides keyed on <html data-theme>
+   Default theme = :root above (no data-theme / "default").
+   Each block redefines the SAME variables used across the
+   stylesheet, so swapping the attribute reskins everything.
+   ============================================ */
+
+/* EDITORIAL LIGHT — warm cream paper, ink type, clay whisper */
+html[data-theme="editorial-light"] {
+  --bg: #f4efe7;
+  --surface: #ece6da;
+  --elevated: #e7e0d4;
+  --subtle: #efe9df;
+  --border: rgba(34,33,30,0.13);
+  --border-soft: rgba(34,33,30,0.07);
+  --border-strong: rgba(34,33,30,0.28);
+
+  --fg: #22211e;
+  --fg-muted: #736d62;
+  --fg-faint: #a8a294;
+
+  /* "accent" role → ink, not green */
+  --green: #22211e;
+  --green-dim: #3a382f;
+  --green-glow: 0 0 0 transparent;
+  --green-glow-lg: 0 0 0 transparent;
+
+  --destructive: #a23b2b;
+  --success: #5a7a4a;
+  --warning: #9a6452;   /* streak → muted clay */
+
+  --accent-rgb: 34,33,30;
+  --accent-wash: rgba(34,33,30,0.06);
+  --accent-wash-soft: rgba(34,33,30,0.03);
+
+  --font-display: 'Fraunces', Georgia, serif;
+}
+
+/* EDITORIAL DARK — same system on warm near-black paper */
+html[data-theme="editorial-dark"] {
+  --bg: #16130f;
+  --surface: #1e1a14;
+  --elevated: #241f18;
+  --subtle: #1a1610;
+  --border: rgba(236,230,218,0.13);
+  --border-soft: rgba(236,230,218,0.06);
+  --border-strong: rgba(236,230,218,0.26);
+
+  --fg: #ece6da;
+  --fg-muted: #9a9182;
+  --fg-faint: #5c564a;
+
+  --green: #ece6da;
+  --green-dim: #cfc7b6;
+  --green-glow: 0 0 0 transparent;
+  --green-glow-lg: 0 0 0 transparent;
+
+  --destructive: #d4715c;
+  --success: #9ab07a;
+  --warning: #b07a64;   /* streak → muted clay */
+
+  --accent-rgb: 236,230,218;
+  --accent-wash: rgba(236,230,218,0.07);
+  --accent-wash-soft: rgba(236,230,218,0.04);
+
+  --font-display: 'Fraunces', Georgia, serif;
+}
+
+/* TERMINAL — greyscale monospace TUI, no neon */
+html[data-theme="terminal"] {
+  --bg: #0e0e10;
+  --surface: #16161a;
+  --elevated: #1c1c20;
+  --subtle: #121215;
+  --border: rgba(205,202,191,0.16);
+  --border-soft: rgba(205,202,191,0.08);
+  --border-strong: rgba(205,202,191,0.30);
+
+  --fg: #cdcabf;
+  --fg-muted: #8a877d;
+  --fg-faint: #56544d;
+
+  --green: #f0ede4;     /* emphasis → bright bone, not neon */
+  --green-dim: #cdcabf;
+  --green-glow: 0 0 0 transparent;
+  --green-glow-lg: 0 0 0 transparent;
+
+  --destructive: #c98a72;
+  --success: #b6c2a0;
+  --warning: #c2b486;
+
+  --accent-rgb: 205,202,191;
+  --accent-wash: rgba(205,202,191,0.08);
+  --accent-wash-soft: rgba(205,202,191,0.04);
+
+  --radius: 0px;
+  --radius-xs: 0px;
+
+  --font-ui: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -131,7 +239,7 @@ body {
   background: var(--green);
   border: none;
   border-radius: var(--radius);
-  color: #000;
+  color: var(--bg);
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 600;
@@ -213,7 +321,7 @@ body {
   background: var(--green);
   border: none;
   border-radius: var(--radius);
-  color: #000;
+  color: var(--bg);
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 600;
@@ -358,7 +466,7 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  background: linear-gradient(180deg, rgba(29,185,84,0.04) 0%, transparent 100%);
+  background: linear-gradient(180deg, var(--accent-wash-soft) 0%, transparent 100%);
   border-bottom: 1px solid var(--border-soft);
   position: relative;
   flex-shrink: 0;
@@ -489,7 +597,7 @@ body {
 .search-action-btn:hover {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(29,185,84,0.08);
+  background: var(--accent-wash);
 }
 
 .search-action-btn svg {
@@ -569,7 +677,19 @@ body {
 }
 
 .art-frame.playing {
-  border-color: rgba(29,185,84,0.45);
+  border-color: rgba(var(--accent-rgb),0.45);
+}
+
+/* Themed placeholder/frame — neutral surface, accent keyline */
+html[data-theme="editorial-light"] .art-frame .art-placeholder,
+html[data-theme="editorial-dark"] .art-frame .art-placeholder,
+html[data-theme="terminal"] .art-frame .art-placeholder {
+  background: var(--elevated);
+}
+html[data-theme="editorial-light"] .art-frame.playing,
+html[data-theme="editorial-dark"] .art-frame.playing,
+html[data-theme="terminal"] .art-frame.playing {
+  border-color: var(--border-strong);
 }
 
 /* art grid texture + breathing glow removed — Clean Swiss */
@@ -659,7 +779,7 @@ body {
 .copy-btn:hover {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(29,185,84,0.08);
+  background: var(--accent-wash);
 }
 
 .copy-btn.copied {
@@ -686,13 +806,13 @@ body {
 .like-btn:hover {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(29,185,84,0.08);
+  background: var(--accent-wash);
 }
 
 .like-btn.liked {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(29,185,84,0.1);
+  background: var(--accent-wash);
 }
 
 .like-btn.liked svg {
@@ -827,7 +947,7 @@ body {
   height: 36px;
   background: var(--green);
   border: none;
-  color: #000;
+  color: var(--bg);
   box-shadow: var(--px-shadow), var(--green-glow);
 }
 
@@ -1198,7 +1318,7 @@ body {
   background: var(--green);
   border: none;
   border-radius: var(--radius);
-  color: #000;
+  color: var(--bg);
   font-family: var(--font-ui);
   font-size: 10px;
   font-weight: 600;
@@ -1384,7 +1504,7 @@ body {
   padding: 0 14px;
   background: var(--green);
   border: none;
-  color: #000;
+  color: var(--bg);
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 600;
@@ -1666,7 +1786,7 @@ body {
 .h-btn.active {
   color: var(--green);
   border-color: var(--green);
-  background: rgba(29,185,84,0.1);
+  background: rgba(var(--accent-rgb),0.1);
 }
 
 /* Jam Session Bar (inline in player screen) */
@@ -1678,15 +1798,15 @@ body {
   align-items: center;
   gap: 0;
   padding: 7px 14px;
-  background: linear-gradient(90deg, rgba(29,185,84,0.08) 0%, rgba(29,185,84,0.03) 100%);
-  border-bottom: 1px solid rgba(29,185,84,0.12);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb),0.08) 0%, rgba(var(--accent-rgb),0.03) 100%);
+  border-bottom: 1px solid rgba(var(--accent-rgb),0.12);
   flex-shrink: 0;
   cursor: pointer;
   transition: background 150ms var(--ease);
 }
 
 .jam-bar:hover {
-  background: linear-gradient(90deg, rgba(29,185,84,0.12) 0%, rgba(29,185,84,0.06) 100%);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb),0.12) 0%, rgba(var(--accent-rgb),0.06) 100%);
 }
 
 .jam-bar.hidden { display: none; }
@@ -1704,13 +1824,13 @@ body {
   border-radius: 50%;
   background: var(--green);
   flex-shrink: 0;
-  box-shadow: 0 0 6px rgba(29,185,84,0.5);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb),0.5);
   animation: jam-pulse 2s ease-in-out infinite;
 }
 
 @keyframes jam-pulse {
-  0%, 100% { box-shadow: 0 0 4px rgba(29,185,84,0.4); }
-  50% { box-shadow: 0 0 10px rgba(29,185,84,0.7); }
+  0%, 100% { box-shadow: 0 0 4px rgba(var(--accent-rgb),0.4); }
+  50% { box-shadow: 0 0 10px rgba(var(--accent-rgb),0.7); }
 }
 
 .jam-bar-label {
@@ -1819,7 +1939,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(29,185,84,0.15);
+  border: 1px solid rgba(var(--accent-rgb),0.15);
 }
 
 .jam-ring-1 { inset: 0; animation: jam-ring-expand 3s ease-in-out infinite; }
@@ -1882,7 +2002,7 @@ body {
 .jam-action-btn:hover {
   background: var(--green-dim);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(29,185,84,0.2);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb),0.2);
 }
 
 .jam-action-btn:active { transform: translateY(0); }
@@ -1933,7 +2053,7 @@ body {
 
 .jam-code-input:focus {
   border-color: var(--green);
-  box-shadow: 0 0 0 2px rgba(29,185,84,0.1);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.1);
 }
 
 .jam-code-input::placeholder {
@@ -1962,7 +2082,7 @@ body {
 .jam-join-btn:hover {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(29,185,84,0.06);
+  background: rgba(var(--accent-rgb),0.06);
 }
 
 /* --- Host / Guest Active States --- */
@@ -1984,7 +2104,7 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--green), rgba(29,185,84,0.2));
+  background: linear-gradient(90deg, var(--green), rgba(var(--accent-rgb),0.2));
 }
 
 .jam-live-header {
@@ -2010,7 +2130,7 @@ body {
   border-radius: 50%;
   background: var(--green);
   flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(29,185,84,0.4);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb),0.4);
   animation: jam-pulse 2s ease-in-out infinite;
 }
 
@@ -2019,8 +2139,8 @@ body {
 }
 
 @keyframes jam-pulse-fast {
-  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(29,185,84,0.4); }
-  50% { opacity: 0.3; box-shadow: 0 0 12px rgba(29,185,84,0.6); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(var(--accent-rgb),0.4); }
+  50% { opacity: 0.3; box-shadow: 0 0 12px rgba(var(--accent-rgb),0.6); }
 }
 
 .jam-code-display {
@@ -2096,7 +2216,7 @@ body {
 }
 
 .jam-peer-dot.host {
-  box-shadow: 0 0 6px rgba(29,185,84,0.5);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb),0.5);
 }
 
 .jam-bottom-action {
@@ -2142,7 +2262,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1.5px solid rgba(29,185,84,0.3);
+  border: 1.5px solid rgba(var(--accent-rgb),0.3);
   animation: jam-connect-pulse 2s ease-out infinite;
 }
 
@@ -2184,7 +2304,7 @@ body {
   border-radius: 50%;
   cursor: pointer;
   transition: transform 150ms var(--ease);
-  box-shadow: 0 0 6px rgba(29,185,84,0.3);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb),0.3);
 }
 
 .jam-offset-slider::-webkit-slider-thumb:hover {
@@ -2216,4 +2336,147 @@ body {
   text-align: center;
   margin-top: 4px;
 }
+/* ============================================
+   APPEARANCE — theme picker (settings)
+   ============================================ */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.theme-card:hover { border-color: var(--border-strong); }
+
+.theme-card.active {
+  border-color: var(--green);
+  background: var(--elevated);
+}
+
+.theme-swatch {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.theme-swatch i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+
+.theme-card-info { min-width: 0; }
+
+.theme-card-name {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.theme-card-desc {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--fg-faint);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.theme-card.active .theme-check { opacity: 1; }
+.theme-check {
+  margin-left: auto;
+  color: var(--green);
+  opacity: 0;
+  flex-shrink: 0;
+}
+.theme-check svg { width: 13px; height: 13px; display: block; }
+
+/* ============================================
+   PER-THEME COMPONENT OVERRIDES
+   (things a token swap can't express)
+   ============================================ */
+
+/* Inline-colored SVG logos/placeholder adopt the accent token so they
+   re-tint per theme. For Default, --green === #1db954, so this is a no-op. */
+html[data-theme] .logo svg rect,
+html[data-theme] .auth-screen .logo-large svg rect,
+html[data-theme] .s-about-logo rect { fill: var(--green); }
+html[data-theme] .art-frame .art-placeholder svg { fill: var(--green); }
+
+/* ---- Editorial (light + dark): serif display type, hairline feel ---- */
+html[data-theme="editorial-light"] .brand,
+html[data-theme="editorial-dark"] .brand,
+html[data-theme="editorial-light"] .brand-large,
+html[data-theme="editorial-dark"] .brand-large,
+html[data-theme="editorial-light"] .greeting-name-lg,
+html[data-theme="editorial-dark"] .greeting-name-lg,
+html[data-theme="editorial-light"] .track-name,
+html[data-theme="editorial-dark"] .track-name,
+html[data-theme="editorial-light"] .s-about-name,
+html[data-theme="editorial-dark"] .s-about-name {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+html[data-theme="editorial-light"] .brand,
+html[data-theme="editorial-dark"] .brand,
+html[data-theme="editorial-light"] .brand-large,
+html[data-theme="editorial-dark"] .brand-large { text-transform: none; }
+
+/* Big stat numerals as serif figures */
+html[data-theme="editorial-light"] .b-val,
+html[data-theme="editorial-dark"] .b-val {
+  font-family: var(--font-display);
+  font-weight: 900;
+}
+
+/* Section labels read as mono kickers */
+html[data-theme="editorial-light"] .section-label,
+html[data-theme="editorial-dark"] .section-label,
+html[data-theme="editorial-light"] .s-head,
+html[data-theme="editorial-dark"] .s-head {
+  font-family: var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- Terminal: monospace TUI, uppercase labels, boxed panels ---- */
+html[data-theme="terminal"] .section-label,
+html[data-theme="terminal"] .s-head,
+html[data-theme="terminal"] .greeting-label,
+html[data-theme="terminal"] .b-label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+html[data-theme="terminal"] .brand,
+html[data-theme="terminal"] .brand-large {
+  letter-spacing: 0.18em;
+}
+/* Boxed now-playing & queue cells for the TUI feel */
+html[data-theme="terminal"] .now-playing,
+html[data-theme="terminal"] .queue-section,
+html[data-theme="terminal"] .playlists-section {
+  border: 1px solid var(--border);
+  padding: 10px;
+}
+html[data-theme="terminal"] .now-playing { margin: 0 0 8px; }
+/* Square everything (radius token already 0, but pin image frames) */
+html[data-theme="terminal"] .art-frame,
+html[data-theme="terminal"] .q-art,
+html[data-theme="terminal"] .playlist-art,
+html[data-theme="terminal"] .search-result-art { border-radius: 0; }
+
 

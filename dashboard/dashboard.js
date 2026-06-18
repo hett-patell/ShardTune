@@ -3,6 +3,16 @@ import { energyProxy } from '../utils/analytics.js';
 
 const $ = id => document.getElementById(id);
 
+// --- Theme: apply stored value + live-sync when changed in the popup ---
+chrome.storage.local.get('theme', r => {
+  document.documentElement.dataset.theme = r.theme || 'default';
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.theme) {
+    document.documentElement.dataset.theme = changes.theme.newValue || 'default';
+  }
+});
+
 let port = null;
 let portAlive = false;
 let reconnectDelay = 1000;
@@ -256,6 +266,11 @@ function renderEnergyChart(data) {
 
   ctx.clearRect(0, 0, W, H);
 
+  // Theme-aware bar color: read the data-viz RGB triple from CSS so the
+  // waveform follows the active theme (green default, olive/ochre/grey themes).
+  const dataRgb = getComputedStyle(document.documentElement)
+    .getPropertyValue('--data-rgb').trim() || '29,185,84';
+
   const n = data.length;
   const gap = Math.min(2, plotW / n * 0.15);
   const barW = Math.max(2, (plotW - (n - 1) * gap) / n);
@@ -267,10 +282,8 @@ function renderEnergyChart(data) {
     const barH = Math.max(2, pct * halfH);
     const x = pad + i * (barW + gap);
 
-    const r = Math.round(29 + pct * 40);
-    const g = Math.round(100 + pct * 85);
-    const b = Math.round(54 + pct * 30);
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    // Energy drives opacity (0.45→1.0) instead of a green ramp.
+    ctx.fillStyle = `rgba(${dataRgb},${(0.45 + pct * 0.55).toFixed(2)})`;
 
     ctx.fillRect(x, centerY - barH, barW, barH);
     ctx.globalAlpha = 0.5;
@@ -324,7 +337,7 @@ function renderHeatmap(hours) {
     const intensity = val > 0 ? 0.15 + (val / max) * 0.85 : 0.04;
     const h = String(i).padStart(2, '0');
     const tip = `${h}:00 · ${val} play${val !== 1 ? 's' : ''}`;
-    return `<div class="peak-cell" style="background:rgba(29,185,84,${intensity})" data-tip="${tip}"></div>`;
+    return `<div class="peak-cell" style="background:rgba(var(--data-rgb),${intensity})" data-tip="${tip}"></div>`;
   }).join('');
 
   c.innerHTML = `
@@ -867,7 +880,7 @@ function buildMemoryGrid(mem, maxPlays) {
     for (let h = 0; h < 24; h++) {
       const slot = mem[d * 24 + h];
       const intensity = slot.plays > 0 ? 0.2 + (slot.plays / maxPlays) * 0.8 : 0.04;
-      const color = slot.plays > 0 ? `rgba(29,185,84,${intensity})` : 'var(--elevated)';
+      const color = slot.plays > 0 ? `rgba(var(--data-rgb),${intensity})` : 'var(--elevated)';
       const tip = `${DAYS[d]} ${String(h).padStart(2, '0')}:00 · ${slot.plays} play${slot.plays !== 1 ? 's' : ''}`;
 
       html += `<div class="mm-cell" style="background:${color}" data-tip="${tip}"></div>`;
@@ -881,11 +894,11 @@ function buildMemoryGrid(mem, maxPlays) {
     <span class="mm-legend-label">Less</span>
     <div class="mm-legend-scale">
       <div class="mm-legend-cell" style="background:var(--elevated)"></div>
-      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.2)"></div>
-      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.4)"></div>
-      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.6)"></div>
-      <div class="mm-legend-cell" style="background:rgba(29,185,84,0.8)"></div>
-      <div class="mm-legend-cell" style="background:rgba(29,185,84,1.0)"></div>
+      <div class="mm-legend-cell" style="background:rgba(var(--data-rgb),0.2)"></div>
+      <div class="mm-legend-cell" style="background:rgba(var(--data-rgb),0.4)"></div>
+      <div class="mm-legend-cell" style="background:rgba(var(--data-rgb),0.6)"></div>
+      <div class="mm-legend-cell" style="background:rgba(var(--data-rgb),0.8)"></div>
+      <div class="mm-legend-cell" style="background:rgba(var(--data-rgb),1.0)"></div>
     </div>
     <span class="mm-legend-label">More</span>
   </div>`;
