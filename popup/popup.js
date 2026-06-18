@@ -1332,7 +1332,6 @@ function handleMessage(msg) {
         } else {
           renderJamPeers(msg.data.peers || [], els.jamGuestPeerList);
         }
-        els.jamScreen.classList.remove('hidden');
       } else {
         jamState = null;
         showJamState('idle');
