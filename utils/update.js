@@ -45,14 +45,16 @@ function compareVersions(local, remote) {
   return 0;
 }
 
-export async function checkForUpdates() {
+export async function checkForUpdates(force = false) {
   try {
-    const lastCheck = await storage.get('lastUpdateCheck');
     const now = Date.now();
 
-    if (lastCheck && (now - lastCheck) < CHECK_INTERVAL) {
-      const cached = await storage.get('updateInfo');
-      return cached || { available: false };
+    if (!force) {
+      const lastCheck = await storage.get('lastUpdateCheck');
+      if (lastCheck && (now - lastCheck) < CHECK_INTERVAL) {
+        const cached = await storage.get('updateInfo');
+        return cached || { available: false };
+      }
     }
 
     const channel = getChannel();

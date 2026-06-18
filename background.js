@@ -753,7 +753,7 @@ async function handlePortMessage(msg, port) {
         break;
       }
       case 'check-for-updates': {
-        const updateInfo = await checkForUpdates();
+        const updateInfo = await checkForUpdates(true);
         port.postMessage({ type: 'update-info', data: updateInfo });
         break;
       }
