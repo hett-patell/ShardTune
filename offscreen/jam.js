@@ -247,7 +247,7 @@ function broadcastSnapshot(playerState) {
     isPlaying: playerState?.is_playing || false,
     trackEpoch,
     queueVersion,
-    timestamp: Date.now()
+    timestamp: playerState?._pollTime || Date.now()
   });
 }
 

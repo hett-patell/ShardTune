@@ -211,17 +211,14 @@ function applyGuestSnapshot(host) {
       const localUri = lastState?.item?.uri;
       const localPlaying = lastState?.is_playing ?? false;
 
-      // 1. Track change (highest priority)
+      // 1. Track change (highest priority) — single API call with position_ms
       if (host.trackUri && host.trackUri !== localUri) {
         syncEngine.enterTransitionLock();
         const elapsed = Date.now() - (host.timestamp || Date.now());
         const seekTo = Math.max(0, host.positionMs + elapsed);
-        await spotify.play(undefined, [host.trackUri]).catch(() => {});
-        if (seekTo > 1000) {
-          await new Promise(r => setTimeout(r, 400));
-          await spotify.seek(seekTo).catch(() => {});
-        }
+        await spotify.play(undefined, [host.trackUri], undefined, undefined, seekTo).catch(() => {});
         syncEngine.updateHostRef(host);
+        syncEngine.updateLocalRef(seekTo, true);
         guestCooldownUntil = Date.now() + 3000;
         schedulePoll(1000);
         return;
@@ -257,11 +254,13 @@ function startSyncLoop() {
     if (jamRole !== 'guest' || !syncEngine.hasHostRef()) return;
     if (Date.now() < rateLimitedUntil) return;
     if (jamApplying) return;
+    if (Date.now() < guestCooldownUntil) return;
 
     const correction = syncEngine.tick();
     if (!correction) return;
 
     await spotify.seek(correction.seekTo).catch(() => {});
+    syncEngine.updateLocalRef(correction.seekTo, true);
     schedulePoll(1000);
   }, 500);
 }

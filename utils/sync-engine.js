@@ -3,13 +3,12 @@
 
 const RTT_SAMPLES = 5;
 const DRIFT_SAMPLES = 3;
-const MAX_PREDICTION_AGE = 10000;
-const TRANSITION_LOCK_MS = 2000;
-const SEEK_COOLDOWN = 3000;
-const RESYNC_COOLDOWN = 15000;
-const BASE_THRESHOLD = 3000;
-const MAX_THRESHOLD = 4500;
-const CONSECUTIVE_REQUIRED = 3;
+const MAX_PREDICTION_AGE = 8000;
+const TRANSITION_LOCK_MS = 3000;
+const SEEK_COOLDOWN = 2000;
+const BASE_THRESHOLD = 800;
+const MAX_THRESHOLD = 1500;
+const CONSECUTIVE_REQUIRED = 2;
 
 let hostRef = null;
 let localRef = null;       // continuously estimated local playback position
@@ -17,7 +16,6 @@ let rttBuffer = [];
 let driftBuffer = [];
 let consecutiveDrift = 0;
 let lastCorrectionAt = 0;
-let lastResyncAt = 0;
 let transitionLock = false;
 let transitionTimer = null;
 let manualOffset = 0;
@@ -30,7 +28,7 @@ export function recordRtt(rttMs) {
 }
 
 export function getLatency() {
-  if (!rttBuffer.length) return { avg: 200, jitter: 100 };
+  if (rttBuffer.length < 2) return { avg: 0, jitter: 0 };
   const avg = rttBuffer.reduce((a, b) => a + b, 0) / rttBuffer.length;
   const jitter = Math.sqrt(rttBuffer.reduce((s, v) => s + (v - avg) ** 2, 0) / rttBuffer.length);
   return { avg: Math.round(avg), jitter: Math.round(jitter) };
@@ -110,20 +108,6 @@ export function enterTransitionLock() {
   }, TRANSITION_LOCK_MS);
 }
 
-// --- Correction ---
-
-export function shouldCorrect() {
-  if (transitionLock) return false;
-  if (Date.now() - lastCorrectionAt < SEEK_COOLDOWN) return false;
-  if (consecutiveDrift < CONSECUTIVE_REQUIRED) return false;
-  return true;
-}
-
-export function applyCorrection(seekTo) {
-  lastCorrectionAt = Date.now();
-  consecutiveDrift = 0;
-}
-
 // --- Core Tick (called every 500ms by background.js) ---
 // No arguments — uses internal hostRef and localRef for live comparison.
 
@@ -151,10 +135,11 @@ export function tick() {
   }
 
   if (consecutiveDrift < CONSECUTIVE_REQUIRED) return null;
-  if (!shouldCorrect()) return null;
+  if (Date.now() - lastCorrectionAt < SEEK_COOLDOWN) return null;
 
   lastCorrectionAt = Date.now();
   consecutiveDrift = 0;
+  driftBuffer = [];
   return { seekTo: Math.max(0, Math.round(predicted)) };
 }
 
@@ -207,7 +192,6 @@ export function reset() {
   driftBuffer = [];
   consecutiveDrift = 0;
   lastCorrectionAt = 0;
-  lastResyncAt = 0;
   transitionLock = false;
   if (transitionTimer) { clearTimeout(transitionTimer); transitionTimer = null; }
 }
