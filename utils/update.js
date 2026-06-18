@@ -58,7 +58,7 @@ export async function checkForUpdates() {
     const channel = getChannel();
     const localVersion = getLocalVersion();
     const release = await getLatestRelease(channel);
-    const remoteVersion = release.tag_name.replace(/^v/, '');
+    const remoteVersion = release.tag_name.replace(/^v/, '').replace(/-.*$/, '');
 
     const updateAvailable = compareVersions(localVersion, remoteVersion) > 0;
 
