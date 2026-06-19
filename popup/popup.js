@@ -126,6 +126,7 @@ let sleepInterval = null;
 let sleepExpiresAt = null;
 let authenticated = false;
 let userName = null;
+let currentUserId = null; // connected Spotify account id (for playlist ownership)
 let lastDeviceId = null;
 let availableDeviceList = [];
 let progressTimer = null;
@@ -153,11 +154,12 @@ function updateGreeting() {
 }
 
 // Load cached name immediately so the greeting shows your name without a flash
-chrome.storage.local.get('displayName', r => {
+chrome.storage.local.get(['displayName', 'userId'], r => {
   if (r.displayName && !userName) {
     userName = r.displayName;
     updateGreeting();
   }
+  if (r.userId && !currentUserId) currentUserId = r.userId;
 });
 
 // --- Themes ---
@@ -295,7 +297,7 @@ els.sClearData.addEventListener('click', () => {
 // --- Settings: Links ---
 
 els.linkGithub.addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://github.com/ShardTune' });
+  chrome.tabs.create({ url: 'https://github.com/hett-patell/ShardTune' });
 });
 
 els.linkWeb.addEventListener('click', () => {
@@ -812,25 +814,148 @@ function renderPlaylists(data) {
     const artUrl = p.images?.[2]?.url || p.images?.[0]?.url || '';
     const artHtml = artUrl ? `<img src="${safeImg(artUrl)}" alt="">` : '';
     const contextUri = p.uri || '';
+    const pid = contextUri.split(':').pop() || '';
+    const ownerId = p.owner?.id || '';
+    const collab = p.collaborative ? '1' : '';
     return `
-      <div class="playlist-item" data-context-uri="${esc(contextUri)}" title="${esc(p.name || '')}">
+      <div class="playlist-item" data-context-uri="${esc(contextUri)}" data-pid="${esc(pid)}" data-owner="${esc(ownerId)}" data-collab="${collab}" title="${esc(p.name || '')}">
         <div class="playlist-art">${artHtml}</div>
         <div class="playlist-info">
           <div class="playlist-name">${esc(p.name || '')}</div>
         </div>
       </div>`;
   }).join('');
-  
+
   els.playlistsList.innerHTML = html;
 
   els.playlistsList.querySelectorAll('.playlist-item[data-context-uri]').forEach(el => {
     el.addEventListener('click', () => {
       const contextUri = el.dataset.contextUri;
-      if (!contextUri) return;
-      send({ action: 'play-playlist', contextUri, deviceId: lastDeviceId });
+      const pid = el.dataset.pid;
+      const ownerId = el.dataset.owner;
+      if (!pid) return;
+      const name = el.querySelector('.playlist-name')?.textContent || 'Playlist';
+      // Spotify's Feb 2026 API only lets us read items of playlists the
+      // connected account owns or collaborates on — followed playlists 403 even
+      // when public. Browse those; for the rest, skip the doomed request and
+      // offer play-all (playback context still works).
+      const owned = !!ownerId && !!currentUserId && ownerId === currentUserId;
+      const canBrowse = owned || el.dataset.collab === '1';
+      openPlaylistBrowser(pid, contextUri, name, canBrowse);
+    });
+  });
+}
+
+// --- Playlist Track Browser ---
+
+let playlistBrowserEl = null;
+
+function ensurePlaylistBrowser() {
+  if (playlistBrowserEl) return playlistBrowserEl;
+  const el = document.createElement('div');
+  el.className = 'pl-browser';
+  el.innerHTML = `
+    <div class="pl-browser-head">
+      <button class="pl-back" title="Back">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3L5 8l5 5"/></svg>
+      </button>
+      <span class="pl-browser-title"></span>
+      <button class="pl-playall">Play all</button>
+    </div>
+    <div class="pl-browser-list"></div>`;
+  document.body.appendChild(el);
+  el.querySelector('.pl-back').addEventListener('click', closePlaylistBrowser);
+  playlistBrowserEl = el;
+  return el;
+}
+
+function closePlaylistBrowser() {
+  if (playlistBrowserEl) playlistBrowserEl.classList.remove('open');
+}
+
+function openPlaylistBrowser(pid, contextUri, name, canBrowse) {
+  const el = ensurePlaylistBrowser();
+  el.querySelector('.pl-browser-title').textContent = name;
+  const list = el.querySelector('.pl-browser-list');
+
+  const playAll = el.querySelector('.pl-playall');
+  // Replace the node to drop any prior playlist's click handler.
+  const freshPlayAll = playAll.cloneNode(true);
+  playAll.replaceWith(freshPlayAll);
+  freshPlayAll.addEventListener('click', () => {
+    if (!contextUri) return;
+    send({ action: 'play-playlist', contextUri, deviceId: lastDeviceId });
+    els.iconPlay.classList.add('hidden');
+    els.iconPause.classList.remove('hidden');
+    startProgressTimer();
+    closePlaylistBrowser();
+  });
+
+  el.classList.add('open');
+
+  if (canBrowse) {
+    list.innerHTML = '<div class="pl-empty">Loading…</div>';
+    send({ action: 'get-playlist-tracks', playlistId: pid, contextUri });
+  } else {
+    // Followed (not owned) — the items endpoint would 403. Don't make a doomed
+    // request; explain it and keep "Play all" usable (playback context works).
+    list.innerHTML = '<div class="pl-empty">Track list is only available for playlists you own.<br>Use “Play all” to play this one.</div>';
+  }
+}
+
+function renderPlaylistTracks(data) {
+  if (!playlistBrowserEl) return;
+  const list = playlistBrowserEl.querySelector('.pl-browser-list');
+  const contextUri = data?.contextUri || '';
+
+  // items === null means the fetch failed (e.g. a 403 from the background
+  // guard) — distinct from a playlist that's genuinely empty. Be honest about
+  // which it is so a forbidden read doesn't masquerade as "no tracks".
+  if (!data || data.items == null) {
+    list.innerHTML = '<div class="pl-empty">Couldn’t load this playlist’s tracks.<br>Use “Play all” to play it.</div>';
+    return;
+  }
+
+  // The /playlists/{id}/items endpoint renamed the per-entry key track -> item;
+  // read either so this works across the API change.
+  const rows = (data.items.items || [])
+    .map(entry => entry?.item ?? entry?.track)
+    .filter(t => t && t.type !== 'episode' && t.uri);
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="pl-empty">No tracks in this playlist</div>';
+    return;
+  }
+
+  list.innerHTML = rows.slice(0, 50).map((t, i) => {
+    const art = t.album?.images?.[2]?.url || t.album?.images?.[0]?.url || '';
+    const artist = t.artists?.map(a => a.name).join(', ') || '';
+    return `<div class="pl-track" data-uri="${esc(t.uri)}">
+      <span class="pl-idx">${String(i + 1).padStart(2, '0')}</span>
+      <div class="pl-art">${art ? `<img src="${safeImg(art)}" alt="">` : ''}</div>
+      <div class="pl-info">
+        <div class="pl-name">${esc(t.name || '')}</div>
+        <div class="pl-artist">${esc(artist)}</div>
+      </div>
+      <span class="pl-dur">${fmt(t.duration_ms || 0)}</span>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.pl-track[data-uri]').forEach(row => {
+    row.addEventListener('click', () => {
+      const uri = row.dataset.uri;
+      if (!uri) return;
+      // Play within the playlist context so "up next" follows the playlist,
+      // falling back to the single track if we somehow lack the context URI.
+      if (contextUri) {
+        send({ action: 'play', contextUri, offset: { uri }, deviceId: lastDeviceId });
+      } else {
+        send({ action: 'play', uris: [uri], deviceId: lastDeviceId });
+      }
       els.iconPlay.classList.add('hidden');
       els.iconPause.classList.remove('hidden');
       startProgressTimer();
+      closePlaylistBrowser();
     });
   });
 }
@@ -1049,7 +1174,9 @@ els.dashboardBtn.addEventListener('click', () => {
 // --- Logout ---
 
 els.logoutBtn.addEventListener('click', () => {
-  shouldReconnect = false;
+  // Keep the port reconnecting: after logout the popup stays open on the auth
+  // screen and needs a live port to send 'authenticate' when the user logs back
+  // in. Disabling reconnect here left the popup dead if the worker was evicted.
   send({ action: 'logout' });
   userName = null;
   stopProgressTimer();
@@ -1105,6 +1232,10 @@ function handleMessage(msg) {
         chrome.storage.local.set({ displayName: name });
         updateGreeting();
       }
+      if (msg.data?.id) {
+        currentUserId = msg.data.id;
+        chrome.storage.local.set({ userId: msg.data.id });
+      }
       break;
     }
     case 'auth-required':
@@ -1149,6 +1280,9 @@ function handleMessage(msg) {
       break;
     case 'playlists':
       renderPlaylists(msg.data);
+      break;
+    case 'playlist-tracks':
+      renderPlaylistTracks(msg.data);
       break;
     case 'update-info':
       showUpdateStatus(msg.data);

@@ -391,17 +391,33 @@ export async function removeTrack(id) {
   return apiFetch(`/me/library?uris=${uris}`, { method: 'DELETE' });
 }
 
+export async function getTrack(id) {
+  return apiFetch(`/tracks/${id}`);
+}
+
+// The batch GET /tracks endpoint was removed for new apps (Spotify Web API
+// changelog, Feb 2026); only GET /tracks/{id} survives. Fan out over single
+// fetches but keep the original { tracks: [...] } shape so callers (vibe-sync)
+// are unchanged. Failed/missing ids resolve to null, mirroring the old batch
+// response where not-found ids came back as null entries.
 export async function getTracks(ids) {
-  if (!ids.length) return { tracks: [] };
-  return apiFetch(`/tracks?ids=${ids.slice(0, 50).join(',')}`);
+  const unique = [...new Set(ids)].filter(Boolean).slice(0, 50);
+  if (!unique.length) return { tracks: [] };
+  const tracks = await Promise.all(
+    unique.map(id => getTrack(id).catch(() => null))
+  );
+  return { tracks };
 }
 
 export async function getUserPlaylists(limit = 50) {
   return apiFetch(`/me/playlists?limit=${limit}`);
 }
 
-export async function getPlaylistTracks(playlistId, limit = 100) {
-  return apiFetch(`/playlists/${playlistId}/tracks?limit=${limit}`);
+// GET /playlists/{id}/tracks was removed for new apps (Spotify Web API
+// changelog, Feb 2026); use /playlists/{id}/items. The item nesting was renamed
+// track -> item, so the caller reads items[].item ?? items[].track defensively.
+export async function getPlaylistItems(playlistId, limit = 100) {
+  return apiFetch(`/playlists/${playlistId}/items?limit=${limit}`);
 }
 
 // Queue
@@ -427,14 +443,4 @@ export async function search(query, types = ['track', 'artist'], limit = 10) {
 
 export async function getLikedSongs(limit = 50, offset = 0) {
   return apiFetch(`/me/tracks?limit=${limit}&offset=${offset}`);
-}
-
-// Artists
-
-export async function getArtist(id) {
-  return apiFetch(`/artists/${id}`);
-}
-
-export async function getRelatedArtists(id) {
-  return apiFetch(`/artists/${id}/related-artists`);
 }

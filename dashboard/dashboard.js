@@ -46,6 +46,7 @@ function send(msg) {
 let currentState = null;
 let analyticsData = null;
 let historyData = null;
+let currentRange = 'short_term'; // active Top Artists/Tracks time window
 
 setLoadingStates();
 connectPort();
@@ -83,7 +84,38 @@ function safe(fn, label) {
 
 $('refresh-all').addEventListener('click', () => {
   setLoadingStates();
+  currentRange = 'short_term';
+  syncRangeToggles();
   requestAll();
+});
+
+// --- Top-items time range toggle (4W / 6M / All) ---
+// short_term comes free with the initial history fetch; only medium/long_term
+// need an extra request. Both panels share one range — clicking either toggle
+// drives both, keeping the two segmented controls in sync.
+
+function syncRangeToggles() {
+  document.querySelectorAll('[data-range-toggle] .range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === currentRange);
+  });
+}
+
+document.querySelectorAll('[data-range-toggle]').forEach(toggle => {
+  toggle.addEventListener('click', e => {
+    const btn = e.target.closest('.range-btn');
+    if (!btn || btn.dataset.range === currentRange) return;
+    currentRange = btn.dataset.range;
+    syncRangeToggles();
+    if (currentRange === 'short_term' && historyData?.topArtists) {
+      // Already have the 4-week data from the history payload — no round trip.
+      renderTopArtists(historyData.topArtists);
+      renderTopTracks(historyData.topTracks);
+    } else {
+      $('top-artists').innerHTML = '<div class="empty-panel">Loading...</div>';
+      $('top-tracks').innerHTML = '<div class="empty-panel">Loading...</div>';
+      send({ action: 'get-top-items', range: currentRange });
+    }
+  });
 });
 
 // --- Messages ---
@@ -112,8 +144,13 @@ function handleMessage(msg) {
       historyData = msg.data;
       safe(() => renderEnergyChart(msg.data.energyCurve), 'energy');
       safe(() => renderHeatmap(msg.data.peakHours), 'heatmap');
-      safe(() => renderTopArtists(msg.data.topArtists), 'artists');
-      safe(() => renderTopTracks(msg.data.topTracks), 'tracks');
+      // The history payload always carries short_term tops. Only paint them if
+      // the user is on the 4W range, so a background refresh can't clobber an
+      // active 6M/All selection.
+      if (currentRange === 'short_term') {
+        safe(() => renderTopArtists(msg.data.topArtists), 'artists');
+        safe(() => renderTopTracks(msg.data.topTracks), 'tracks');
+      }
       safe(() => renderLog(msg.data.history), 'log');
       safe(() => renderSessionVibe(msg.data.energyCurve), 'vibe');
       safe(() => renderAlbumMosaic(msg.data.history, msg.data.topTracks), 'mosaic');
@@ -125,6 +162,12 @@ function handleMessage(msg) {
         console.warn('[ShardTune]', msg.data.errors);
         showApiWarning(msg.data.errors);
       }
+      break;
+    case 'top-items':
+      // Ignore a stale response if the user toggled again before it arrived.
+      if (msg.data?.range !== currentRange) break;
+      safe(() => renderTopArtists(msg.data.topArtists), 'artists-range');
+      safe(() => renderTopTracks(msg.data.topTracks), 'tracks-range');
       break;
     case 'devices':
       safe(() => renderDevices(msg.data), 'devices');

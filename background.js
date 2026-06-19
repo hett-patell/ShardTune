@@ -180,6 +180,13 @@ async function doPoll() {
       }
     } else {
       pausedTicks = 0;
+      // Re-upshift when playback resumes while the popup is open. Without this,
+      // a >30s pause downshifts to the 60s alarm and nothing ever restored the
+      // 5s cadence (startFastPolling only ran on port connect), so live updates
+      // stalled until the popup was reopened. Gated on an open port so a closed
+      // popup stays on the efficient slow alarm; startFastPolling() is a no-op
+      // if the interval is already running.
+      if (ports.size > 0) startFastPolling();
     }
   } catch (err) {
     if (err.message?.includes('Not authenticated')) {
@@ -205,14 +212,25 @@ async function doPoll() {
 // --- Cached Friend Fetch ---
 
 const FRIENDS_CACHE_TTL = 30000; // 30 seconds
+let friendsInFlight = null; // single-flight guard for getFriendActivity()
 
 async function getFriendsCached() {
   if (friendsCache && Date.now() - friendsCacheTime < FRIENDS_CACHE_TTL) {
     return friendsCache;
   }
-  friendsCache = await buddylist.getFriendActivity();
-  friendsCacheTime = Date.now();
-  return friendsCache;
+  // Single-flight: the dashboard fires get-friends and get-vibe-sync ~50ms
+  // apart, and both land here on a cold cache. Without sharing one in-flight
+  // fetch, each call to getFriendActivity() can spawn its own background
+  // open.spotify.com tab to mint a web token — two tabs racing.
+  if (friendsInFlight) return friendsInFlight;
+  friendsInFlight = buddylist.getFriendActivity()
+    .then(data => {
+      friendsCache = data;
+      friendsCacheTime = Date.now();
+      return data;
+    })
+    .finally(() => { friendsInFlight = null; });
+  return friendsInFlight;
 }
 
 // --- Port Message Handling ---
@@ -477,6 +495,34 @@ async function handlePortMessage(msg, port) {
         schedulePoll(300);
         break;
       }
+      case 'get-top-items': {
+        // Dashboard time-range toggle. Echo the requested range back so a fast
+        // toggle can't render a stale window over a newer one.
+        const range = ['short_term', 'medium_term', 'long_term'].includes(msg.range)
+          ? msg.range : 'short_term';
+        const [artists, tracks] = await Promise.all([
+          spotify.getTopArtists(range, 20).catch(() => null),
+          spotify.getTopTracks(range, 20).catch(() => null)
+        ]);
+        port.postMessage({
+          type: 'top-items',
+          data: { range, topArtists: artists?.items || [], topTracks: tracks?.items || [] }
+        });
+        break;
+      }
+      case 'get-playlist-tracks': {
+        // Spotify 403s item reads on playlists the connected account doesn't
+        // own (Feb 2026 API). The popup gates owned-only, but guard here too so
+        // a 403 degrades to a clean empty state instead of a generic error toast
+        // and a stuck "Loading…" overlay.
+        const items = await spotify.getPlaylistItems(msg.playlistId, msg.limit || 100)
+          .catch(e => { console.warn('[ShardTune BG] playlist items:', e.message); return null; });
+        port.postMessage({
+          type: 'playlist-tracks',
+          data: { playlistId: msg.playlistId, contextUri: msg.contextUri, items }
+        });
+        break;
+      }
       case 'get-update-info': {
         const updateInfo = await getUpdateInfo();
         port.postMessage({ type: 'update-info', data: updateInfo });
@@ -519,6 +565,11 @@ async function handlePortMessage(msg, port) {
       case 'logout':
         await analytics.flush();
         await spotify.logout();
+        // Also drop the harvested Spotify *web* bearer token (used for the
+        // unofficial friend-activity endpoint) so logout fully clears the
+        // user's credentials, not just the OAuth pair.
+        await storage.remove('shardtune_web_token');
+        await storage.remove('shardtune_web_token_ts');
         lastState = null;
         lastHistory = null;
         lastHistoryTime = 0;

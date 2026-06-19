@@ -6,7 +6,8 @@
   "permissions": ["storage", "alarms", "tabs", "notifications", "webNavigation"],
   "host_permissions": [
     "https://*.spotify.com/*",
-    "https://accounts.spotify.com/*"
+    "https://accounts.spotify.com/*",
+    "https://api.github.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'none'; frame-ancestors 'none'"

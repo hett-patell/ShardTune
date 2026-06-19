@@ -1907,4 +1907,121 @@ html[data-theme="terminal"] .q-art,
 html[data-theme="terminal"] .playlist-art,
 html[data-theme="terminal"] .search-result-art { border-radius: 0; }
 
+/* --- Playlist Track Browser (slide-over panel) --- */
+.pl-browser {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 220ms var(--ease);
+  pointer-events: none;
+}
+.pl-browser.open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.pl-browser-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pl-back {
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  padding: 2px;
+  width: 20px;
+  height: 20px;
+  transition: color 150ms var(--ease);
+}
+.pl-back:hover { color: var(--fg); }
+.pl-browser-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-playall {
+  background: var(--green);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: opacity 150ms var(--ease);
+}
+.pl-playall:hover { opacity: 0.85; }
+.pl-browser-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+.pl-empty {
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 11px;
+  padding: 24px 0;
+}
+.pl-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 120ms var(--ease);
+}
+.pl-track:hover { background: var(--elevated); }
+.pl-idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.pl-art {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--elevated);
+  flex-shrink: 0;
+}
+.pl-art img { width: 100%; height: 100%; object-fit: cover; }
+.pl-info { flex: 1; min-width: 0; }
+.pl-name {
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-artist {
+  font-size: 10px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-dur {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
 

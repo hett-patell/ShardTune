@@ -461,6 +461,33 @@ body {
 
 .panel-action:hover { color: var(--green); }
 
+/* Top-items time-range toggle (4W / 6M / All) */
+.range-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--elevated);
+  border-radius: 6px;
+  padding: 2px;
+}
+.range-btn {
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 150ms var(--ease), background 150ms var(--ease);
+}
+.range-btn:hover { color: var(--fg); }
+.range-btn.active {
+  color: var(--bg);
+  background: var(--green);
+}
+
 .list-scroll {
   max-height: 340px;
   overflow-y: auto;
