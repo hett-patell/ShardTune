@@ -41,7 +41,7 @@ Full player controls right from the popup — no need to tab over to Spotify.
 - **Search** — find and play tracks or artists directly from the popup
 - **Add to Queue** — queue any search result with one click
 - **Like/Save** — save tracks to your library instantly
-- **Playlists** — browse and play your playlists without leaving the popup
+- **Playlists** — open a playlist to browse its tracks and play any one in context, or play the whole thing
 - **Device Switching** — move playback between Spotify Connect devices
 - **Copy Track Link** — one-click copy to clipboard
 - **Sleep Timer** — 15/30/45/60 min presets or custom duration (up to 8 hours), with live countdown badge
@@ -57,7 +57,7 @@ A full-page dashboard that breaks down your listening habits. All data is comput
 - **Session Vibe** — mood and energy analysis for your current session
 - **Taste Profile** — energy, popularity, and variety metrics from your top tracks
 - **Library Stats** — liked songs count, unique artists, recent additions
-- **Top Artists & Tracks** — your most-played music with rankings
+- **Top Artists & Tracks** — your most-played music, ranked over the last 4 weeks, 6 months, or all time
 - **Listening Log** — chronological history of recently played tracks
 - **Album Mosaic** — visual grid of your recent albums
 - **Friend Activity** — see what friends are playing in real time
@@ -134,7 +134,7 @@ popup / dashboard  <──port──>  service worker (MV3)  <──Web API─�
 - **Auth** — OAuth 2.0 PKCE with loopback redirect. Tokens stored locally, refreshed with a mutex to prevent stampede.
 - **Polling** — Single-flight polling with fast interval when the popup is open, durable alarm fallback for service worker eviction. Respects `429 Retry-After`.
 - **Analytics** — 100% local computation. Peak hours, music memory, and streaks persist through write-through caching so MV3 worker eviction doesn't lose data.
-- **Energy Proxy** — Spotify deprecated audio-features for new apps, so ShardTune uses a deterministic proxy based on popularity, duration, and explicitness.
+- **Energy Proxy** — Spotify has retired several Web API endpoints for new apps (audio-features, recommendations, related-artists), so energy is a deterministic proxy from popularity, duration, and explicitness — no deprecated calls.
 
 ---
 
