@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ShardTune",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Spotify desk controller + listening analytics",
   "permissions": ["storage", "alarms", "tabs", "notifications", "webNavigation"],
   "host_permissions": [
