@@ -184,6 +184,18 @@ Your data **never leaves your device**. No analytics servers, no tracking pixels
 | Website | [networkshard.com](https://networkshard.com) |
 | Repository | [hett-patell/ShardTune](https://github.com/hett-patell/ShardTune) |
 
+## The Shard ecosystem
+
+| Repo | What it does |
+|---|---|
+| [ShardLure](https://github.com/hett-patell/ShardLure) | SSH honeypot + threat-intel dashboard |
+| [ShardC2](https://github.com/hett-patell/ShardC2) | Red-team C2 framework in Go |
+| [ShardFlow](https://github.com/hett-patell/ShardFlow) | Layer-2 LAN workbench (ARP, drop, throttle) |
+| [ShardShell](https://github.com/hett-patell/ShardShell) | PHP post-exploitation shell |
+| [ShardPass](https://github.com/hett-patell/ShardPass) | Minimal TOTP authenticator (Chrome MV3) |
+| [ShardPet](https://github.com/hett-patell/ShardPet) | Pixel-Pokémon browser extension |
+| [ShardTune](https://github.com/hett-patell/ShardTune) | Spotify controller + listening analytics (Chrome/Brave) |
+
 ---
 
 <div align="center">
